@@ -1,11 +1,14 @@
 {
-  "project_name": "My Awesome Frappe App",
-  "project_slug": "{{ cookiecutter.project_name.lower().replace(' ', '_').replace('-', '_') }}",
-  "app_name": "{{ cookiecutter.project_slug }}",
-  "image_prefix": "{{ cookiecutter.project_slug }}",
-  "default_dbms": ["postgres", "mariadb"],
-  "author_name": "Your Name",
-  "image_user": "frappe",
-  "image_group": "frappe",
-  "site_name": "{{ cookiecutter.project_slug }}.local"
+	"project_name": "My Awesome App Name",
+	"project_slug": "{{ cookiecutter.project_name.lower().replace(' ', '_').replace('-', '_') }}",
+	"app_name": "{{ cookiecutter.project_slug }}",
+	"image_prefix": "{{ cookiecutter.project_slug }}",
+	"default_dbms": [
+		"postgres",
+		"mariadb"
+	],
+	"author_name": "Author Name",
+	"image_user": "frappe",
+	"image_group": "frappe",
+	"site_name": "{{ cookiecutter.project_slug }}.local"
 }

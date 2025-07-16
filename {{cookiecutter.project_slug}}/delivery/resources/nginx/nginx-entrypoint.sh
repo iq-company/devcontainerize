@@ -75,11 +75,11 @@ envsubst '${BACKEND}
   ${PROXY_READ_TIMEOUT}
   ${LISTENER_PLACEHOLDER}
   ${CLIENT_MAX_BODY_SIZE}' \
-    </templates/nginx/iqa.conf.template >/opt/nginx/conf/conf.d/iqa.conf
+    </templates/nginx/{{ cookiecutter.project_slug }}.conf.template >/opt/nginx/conf/conf.d/{{ cookiecutter.project_slug }}.conf
 
 
 if [ -f "$TLS_PATH/tls.key" ]; then
-  sed -i 's|http://backend-server|https://backend-server|g' /opt/nginx/conf/conf.d/iqa.conf
+  sed -i 's|http://backend-server|https://backend-server|g' /opt/nginx/conf/conf.d/{{ cookiecutter.project_slug }}.conf
 fi
 
 /opt/nginx/sbin/nginx -g 'daemon off;'

@@ -8,19 +8,19 @@ x-backend-defaults: &backend_defaults
   image: "${{ '{' }}{{ cookiecutter.image_prefix }}-dev}:${IQ_IMAGE_TAG}"
   platform: linux/amd64
   volumes:
-    - ../scripts:/home/iqa/bench/bin-dev # Correct path from ops/compose to ops/scripts
-    - sites:/home/iqa/bench/sites
-    - apps:/home/iqa/bench/apps
+    - ../scripts:/home/{{ cookiecutter.image_user }}/bench/bin-dev # Correct path from ops/compose to ops/scripts
+    - sites:/home/{{ cookiecutter.image_user }}/bench/sites
+    - apps:/home/{{ cookiecutter.image_user }}/bench/apps
     - type: bind
       source: "${VSCODE_SETTINGS_PATH}"
-      target: "/home/iqa/.vscode-host"
+      target: "/home/{{ cookiecutter.image_user }}/.vscode-host"
   env_file:
     - ./.env
 
 services:
   init:
     <<: *backend_defaults
-    command: bash -c "DEV_CONTAINER=1 /home/iqa/bench/bin-dev/init_site.sh"
+    command: bash -c "DEV_CONTAINER=1 /home/{{ cookiecutter.image_user }}/bench/bin-dev/init_site.sh"
     depends_on:
       db:
         condition: service_started

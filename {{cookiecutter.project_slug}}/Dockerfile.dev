@@ -2,6 +2,9 @@
 ARG BUILDER_IMAGE_SOURCE
 ARG BASE_IMAGE_SOURCE
 
+ARG IMAGE_USER={{ cookiecutter.image_user }}
+ARG IMAGE_GROUP={{ cookiecutter.image_group }}
+
 FROM ${BUILDER_IMAGE_SOURCE:-iq-builder} AS builder
 FROM ${BASE_IMAGE_SOURCE:-iq-base} AS dev-base
 
@@ -12,38 +15,6 @@ ARG GITHUB_TOKEN
 ARG FRAPPE_BRANCH=version-15
 ARG FRAPPE_PATH=https://github.com/frappe/frappe
 
-ARG ENABLE_TRANSFORMERS=false
-ENV ENABLE_TRANSFORMERS=${ENABLE_TRANSFORMERS}
-
-ARG ENABLE_TRANSFORMERS_MODELS="" # TODO
-ENV ENABLE_TRANSFORMERS_MODELS=${ENABLE_TRANSFORMERS_MODELS}
-
-ARG ENABLE_NLP=false
-ENV ENABLE_NLP=${ENABLE_NLP}
-
-ARG ENABLE_NLP_MODELS="" # TODO
-ENV ENABLE_NLP_MODELS=${ENABLE_NLP_MODELS}
-
-ARG ENABLE_PANDAS=false
-ENV ENABLE_PANDAS=${ENABLE_PANDAS}
-
-ARG ENABLE_OCR=false
-ENV ENABLE_OCR=${ENABLE_OCR}
-
-ARG ENABLE_DOC_READER=false
-ENV ENABLE_DOC_READER=${ENABLE_DOC_READER}
-
-ARG ENABLE_CHROMADB_CLIENT=false
-ENV ENABLE_CHROMADB_CLIENT=${ENABLE_CHROMADB_CLIENT}
-
-ARG ENABLE_LANGCHAIN=false
-ENV ENABLE_LANGCHAIN=${ENABLE_LANGCHAIN}
-
-ARG ENABLE_APIFY_CLIENT=false
-ENV ENABLE_APIFY_CLIENT=${ENABLE_APIFY_CLIENT}
-
-ARG ENABLE_LANGUAGE_DETECTION=false
-ENV ENABLE_LANGUAGE_DETECTION=${ENABLE_LANGUAGE_DETECTION}
 
 # copies compiled psql and libpq.so, libpq.so.5, libpq.so.5.16 from builder stage
 COPY --from=builder /tmp/psql/bin/psql /usr/local/bin/psql
@@ -52,9 +23,6 @@ COPY --from=builder --chown=${IMAGE_USER}:${IMAGE_GROUP} /opt/nginx/ /opt/nginx/
 COPY --from=builder --chown=${IMAGE_USER}:${IMAGE_GROUP} /opt/pcre2/* /opt/pcre2/
 
 ENV PATH="/home/${IMAGE_USER}/bench/env/bin:${PATH}"
-
-# COPY --chmod=0755 delivery/resources/frappe-patches.sh /home/iqa/frappe-patches.sh
-# COPY --chmod=0755 delivery/resources/iq_core-patches.sh /home/iqa/iq_core-patches.sh
 
 USER root
 
@@ -81,7 +49,7 @@ RUN set -x; \
 	--frappe-branch ${FRAPPE_BRANCH} \
 	--frappe-path ${FRAPPE_PATH} \
 	--custom-apps "${CUSTOM_APPS}" \
-	--home-dir /home/iqa \
+	--home-dir /home/{{ cookiecutter.image_user }} \
 	--github-user ${GITHUB_USER} \
 	--github-token "${GITHUB_TOKEN}";
 
@@ -93,11 +61,9 @@ USER root
 COPY --chmod=0755 delivery/resources/docker-patches.sh /home/${IMAGE_USER}/docker-patches.sh
 
 RUN set -x; \n	bash /home/${IMAGE_USER}/docker-patches.sh; \n
-	# make iq_core get installed for all new sites by default
-	# jq '.install_apps += ["'$IQ_APP_NAME'"]' /home/iqa/bench/sites/common_site_config.json > /home/iqa/bench/temp_common_site_config.json && mv /home/iqa/bench/temp_common_site_config.json /home/iqa/bench/sites/common_site_config.json; \
 	chown -R ${IMAGE_USER}:${IMAGE_GROUP} /home/${IMAGE_USER}/bench/sites/; \
-	chmod -R g+rw /home/iqa/bench/sites/; \
-	chmod -R g+rw /home/iqa/bench/config; \
+	chmod -R g+rw /home/{{ cookiecutter.image_user }}/bench/sites/; \
+	chmod -R g+rw /home/{{ cookiecutter.image_user }}/bench/config; \
 	chmod -R g+rw /opt/nginx/
 
 USER ${IMAGE_USER}
@@ -139,9 +105,11 @@ RUN bench mkdocs-build
 # ##############################
 FROM dev-base AS final
 
+ARG IMAGE_USER={{ cookiecutter.image_user }}
+ARG IMAGE_GROUP={{ cookiecutter.image_group }}
+
 # Copy the built docs from the docs-builder stage
-COPY --from=docs-builder --chown=iqa:iqa /home/iqa/bench/apps/iq_core/iq_core/mkdocs/dist /home/iqa/bench/apps/iq_core/iq_core/mkdocs/dist
+COPY --from=docs-builder --chown=${IMAGE_USER}:${IMAGE_GROUP} /home/${IMAGE_USER}/bench/apps/{{ cookiecutter.app_name }}/{{ cookiecutter.app_name }}/mkdocs/dist /home/${IMAGE_USER}/bench/apps/{{ cookiecutter.app_name }}/{{ cookiecutter.app_name }}/mkdocs/dist
 
 USER ${IMAGE_USER}
 WORKDIR /home/${IMAGE_USER}/bench
-

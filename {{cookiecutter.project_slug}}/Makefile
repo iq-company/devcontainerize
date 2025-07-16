@@ -8,8 +8,8 @@ REPO_BASE ?=
 REPO_BUILDER ?=
 REPO_DEV ?=
 REPO_RELEASE ?=
-IQ_BRAND_NAME ?= IQ Flow
-IQ_SITE_NAME ?= iq_site
+IQ_BRAND_NAME ?= {{ cookiecutter.project_name }}
+IQ_SITE_NAME ?= {{ cookiecutter.site_name }}
 
 ########################################################################
 # Versionsdefinitionen (stabil – basierend auf kurzem Inhalts-Hash der Datei)
@@ -157,7 +157,7 @@ release: base dev
 #   SECTION:  Only run a specific SECTION
 #   CONTINUE: Set to 1 to continue on errors (default is to stop on first error)
 #
-#   IQ_SITE_NAME: needs to start with "test_" (default: test_iq_site)
+#   IQ_SITE_NAME: needs to start with "test_" (default: test_{{ cookiecutter.site_name }})
 #   PG_HOST:  PostgreSQL host (default: localhost)
 #   PG_PORT:  PostgreSQL port (default: 5432)
 #   PG_SUPER_USER: Needs also to start with "test_" (default: test_iq_su)
@@ -167,7 +167,7 @@ test:
 	$(eval override IQ_SITE_NAME := $(if $(filter test_%,$(IQ_SITE_NAME)),$(IQ_SITE_NAME),test_{{ cookiecutter.image_prefix }}_site))
 	$(eval override DBMS := $(if $(DBMS),$(DBMS),postgres))
 	$(eval override PG_SUPER_USER := $(if $(filter test_%,$(PG_SUPER_USER)),$(PG_SUPER_USER),test_{{ cookiecutter.image_prefix }}_su))
-	
+
 	@echo "Starting tests with database: $(DBMS), using site name: $(IQ_SITE_NAME)"
 	@if [ "$(DBMS)" = "postgres" ]; then \
 		# first switch to bench dir \

@@ -21,9 +21,9 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 # Constants
-BENCH_DIR = "/home/iqa/bench"
+BENCH_DIR = "/home/{{ cookiecutter.image_user }}/bench"
 APPS_DIR = f"{BENCH_DIR}/apps"
-SITE_NAME = "iq_site"
+SITE_NAME = "{{ cookiecutter.site_name }}"
 
 
 def run_command(cmd, cwd=None, interactive=False):
@@ -108,7 +108,7 @@ def create_new_app(app_name):
 	print(f"App {app_name} created.")
 
 	print(f"Installing app {app_name}")
-	run_command(["bench", "--site", "iq_site", "install-app", app_name], cwd=BENCH_DIR, interactive=True)
+	run_command(["bench", "--site", "{{ cookiecutter.site_name }}", "install-app", app_name], cwd=BENCH_DIR, interactive=True)
 
 	print("\n\n(!) Run Task (F8) -> Restart Bench !!\n\n")
 
@@ -116,28 +116,28 @@ def create_new_app(app_name):
 def link_existing_app(app_path_or_url):
 	"""Link an existing app from filesystem or git."""
 	import re
-	
+
 	# Extract module_name from git URL
 	if is_url(app_path_or_url):
 		# Find the repository name (between last "/" and ".git" if present)
 		match = re.search(r"/([^/]+)(\.git)?$", app_path_or_url)
 		if not match:
 			raise ValueError(f"Invalid git URL format: {app_path_or_url}")
-		
+
 		module_name = match.group(1)
 		if module_name.endswith(".git"):
 			module_name = module_name[:-4]
 	else:
 		raise ValueError(f"Not a valid git URL: {app_path_or_url}")
-	
+
 	print(f"Loading app from '{app_path_or_url}'")
 	run_command(["bench", "get-app", app_path_or_url], cwd=BENCH_DIR, interactive=True)
-	
+
 	# Read hooks.py to get app_name
 	hooks_file_path = f"{APPS_DIR}/{module_name}/{module_name}/hooks.py"
 	if not os.path.exists(hooks_file_path):
 		raise FileNotFoundError(f"Could not find hooks.py at {hooks_file_path}")
-	
+
 	app_name = None
 	with open(hooks_file_path, 'r') as hooks_file:
 		for line in hooks_file:
@@ -148,10 +148,10 @@ def link_existing_app(app_path_or_url):
 				if match:
 					app_name = match.group(1)
 					break
-	
+
 	if not app_name:
 		raise ValueError(f"Could not find app_name in {hooks_file_path}")
-	
+
 	# Install the app
 	print(f"Installing app '{app_name}'")
 	run_command(["bench", "--site", SITE_NAME, "install-app", app_name], cwd=BENCH_DIR, interactive=True)

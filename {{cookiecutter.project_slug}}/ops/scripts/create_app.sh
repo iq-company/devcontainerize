@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 
 APP_NAME="$1"
-CUSTOM_APPS_DIR="/home/iqa/bench/custom_apps"
-APPS_DIR="/home/iqa/bench/apps"
+CUSTOM_APPS_DIR="/home/{{ cookiecutter.image_user }}/bench/custom_apps"
+APPS_DIR="/home/{{ cookiecutter.image_user }}/bench/apps"
 
 if [ -d "${APPS_DIR}/${APP_NAME}" ] || [ -d "${CUSTOM_APPS_DIR}/${APP_NAME}" ]; then
     echo "App '${APP_NAME}' existiert bereits. Abbruch."

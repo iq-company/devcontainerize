@@ -161,9 +161,7 @@ def process_project_keybindings(content):
 def main():
     # The three possible directories (mounted in the container)
     dirs = [
-        "/home/iqa/.vscode-host",
-        # "/home/iqa/.vscode-linux",
-        # "/home/iqa/.vscode-macosx"
+        "/home/{{ cookiecutter.image_user }}/.vscode-host"
     ]
     workdir = find_first_nonempty_dir(dirs)
     if workdir is None:

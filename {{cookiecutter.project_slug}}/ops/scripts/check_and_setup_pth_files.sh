@@ -2,13 +2,13 @@
 
 set -e  # Exit on errors
 
-BENCH_DIR="/home/iqa/bench"
-APPS_DIR="/home/iqa/bench/apps"
+BENCH_DIR="/home/{{ cookiecutter.image_user }}/bench"
+APPS_DIR="/home/{{ cookiecutter.image_user }}/bench/apps"
 
 # Ensure all apps have .pth files in site-packages
 echo "Setting up .pth files for all apps..."
 
-ls -1 apps > /home/iqa/bench/sites/apps.txt;
+ls -1 apps > /home/{{ cookiecutter.image_user }}/bench/sites/apps.txt;
 
 # Find the site-packages directory dynamically
 SITE_PACKAGES=$(find /home/{{ cookiecutter.image_user }}/bench/env/lib*/python*/site-packages -type d -name "site-packages" | head -n 1)
@@ -18,7 +18,7 @@ if [ -n "$SITE_PACKAGES" ]; then
         if [ -d "$app_dir" ]; then
             app_name=$(basename "$app_dir")
             pth_file="$SITE_PACKAGES/$app_name.pth"
-            
+
             if [ ! -f "$pth_file" ]; then
                 echo "Creating .pth file for $app_name"
                 echo "$app_dir" > "$pth_file"

@@ -2,21 +2,21 @@
 
 set -e
 # get current python version
-export PYTHON_VENV_VERSION=$(ls /home/iqa/bench/env/lib/ | grep -E '^python[0-9]+\.[0-9]+' | sort -V | tail -n 1)
+export PYTHON_VENV_VERSION=$(ls /home/{{ cookiecutter.image_user }}/bench/env/lib/ | grep -E '^python[0-9]+\.[0-9]+' | sort -V | tail -n 1)
 
 # remove git dependencies from bench
-sed -i 's/import git//' /home/iqa/bench/env/lib/$PYTHON_VENV_VERSION/site-packages/bench/utils/app.py
-sed -i 's/import git//' /home/iqa/bench/env/lib/$PYTHON_VENV_VERSION/site-packages/bench/app.py
+sed -i 's/import git//' /home/{{ cookiecutter.image_user }}/bench/env/lib/$PYTHON_VENV_VERSION/site-packages/bench/utils/app.py
+sed -i 's/import git//' /home/{{ cookiecutter.image_user }}/bench/env/lib/$PYTHON_VENV_VERSION/site-packages/bench/app.py
 
-rm -rf apps/iq_core/.devcontainer \
-	apps/iq_core/.github \
-	apps/iq_core/.vscode \
-	apps/iq_core/.gitignore \
-	apps/iq_core/.git \
-	apps/iq_core/delivery
+rm -rf apps/{{ cookiecutter.app_name }}/.devcontainer \
+	apps/{{ cookiecutter.app_name }}/.github \
+	apps/{{ cookiecutter.app_name }}/.vscode \
+	apps/{{ cookiecutter.app_name }}/.gitignore \
+	apps/{{ cookiecutter.app_name }}/.git \
+	apps/{{ cookiecutter.app_name }}/delivery
 
 # Clean up unnecessary files
-cd /home/iqa/bench/apps/frappe &&
+cd /home/{{ cookiecutter.image_user }}/bench/apps/frappe &&
 	rm -rf esbuild &&
 	rm -rf node_modules/@babel &&
 	rm -rf node_modules/@nodelib &&
@@ -32,12 +32,12 @@ cd /home/iqa/bench/apps/frappe &&
 	yarn autoclean --init && yarn autoclean --force &&
 	# reduce (yet unneeded) cve pips
 	pip uninstall -y pip &&
-	rm -rf /home/iqa/bench/env/lib/python3*/site-packages/h11/tests/ &&
-	rm -rf /home/iqa/bench/env/lib/python3*/site-packages/parso*
+	rm -rf /home/{{ cookiecutter.image_user }}/bench/env/lib/python3*/site-packages/h11/tests/ &&
+	rm -rf /home/{{ cookiecutter.image_user }}/bench/env/lib/python3*/site-packages/parso*
 
 # DONT do this, if LOCAL_DEV_ENV=true (this means in this container, the local git will be mounted) !
 if [ "$LOCAL_DEV_ENV" != "true" ]; then
-	/usr/bin/find /home/iqa/bench/apps -type d \( -name ".cache" -o -name ".config" -o -name ".yarn" -o -name ".git" \) -exec rm -rf {} +
-	\ find /home/iqa/bench/apps -mindepth 1 -path "*/.git" | xargs rm -fr
-	/usr/bin/find /home/iqa/bench/apps -mindepth 1 -path "*/.github" | xargs rm -fr
+	/usr/bin/find /home/{{ cookiecutter.image_user }}/bench/apps -type d \( -name ".cache" -o -name ".config" -o -name ".yarn" -o -name ".git" \) -exec rm -rf {} +
+	\ find /home/{{ cookiecutter.image_user }}/bench/apps -mindepth 1 -path "*/.git" | xargs rm -fr
+	/usr/bin/find /home/{{ cookiecutter.image_user }}/bench/apps -mindepth 1 -path "*/.github" | xargs rm -fr
 fi

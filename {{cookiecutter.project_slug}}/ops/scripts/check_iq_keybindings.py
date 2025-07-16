@@ -23,9 +23,7 @@ def check_keybindings_installed():
     """Check if IQ keybindings are installed in any VSCode user directory"""
     # The three possible directories (mounted in the container)
     dirs = [
-        "/home/{{ cookiecutter.image_user }}/.vscode-host",
-        # "/home/iqa/.vscode-linux",
-        # "/home/iqa/.vscode-macosx"
+        "/home/{{ cookiecutter.image_user }}/.vscode-host"
     ]
 
     # Find the first non-empty VSCode user directory

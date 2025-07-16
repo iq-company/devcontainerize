@@ -4,6 +4,9 @@
 ARG BASE_IMAGE_SOURCE
 FROM ${BASE_IMAGE_SOURCE:-iq-base}
 
+ARG IMAGE_USER={{ cookiecutter.image_user }}
+ARG IMAGE_GROUP={{ cookiecutter.image_group }}
+
 USER root
 
 RUN apt-get update \
