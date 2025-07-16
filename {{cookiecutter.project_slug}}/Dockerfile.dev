@@ -1,0 +1,148 @@
+# Stage 1: Main development image
+ARG BUILDER_IMAGE_SOURCE
+ARG BASE_IMAGE_SOURCE
+
+FROM ${BUILDER_IMAGE_SOURCE:-iq-builder} AS builder
+FROM ${BASE_IMAGE_SOURCE:-iq-base} AS dev-base
+
+ARG CUSTOM_APPS
+ARG GITHUB_USER=x-oauth-basic
+ARG GITHUB_TOKEN
+
+ARG FRAPPE_BRANCH=version-15
+ARG FRAPPE_PATH=https://github.com/frappe/frappe
+
+ARG ENABLE_TRANSFORMERS=false
+ENV ENABLE_TRANSFORMERS=${ENABLE_TRANSFORMERS}
+
+ARG ENABLE_TRANSFORMERS_MODELS="" # TODO
+ENV ENABLE_TRANSFORMERS_MODELS=${ENABLE_TRANSFORMERS_MODELS}
+
+ARG ENABLE_NLP=false
+ENV ENABLE_NLP=${ENABLE_NLP}
+
+ARG ENABLE_NLP_MODELS="" # TODO
+ENV ENABLE_NLP_MODELS=${ENABLE_NLP_MODELS}
+
+ARG ENABLE_PANDAS=false
+ENV ENABLE_PANDAS=${ENABLE_PANDAS}
+
+ARG ENABLE_OCR=false
+ENV ENABLE_OCR=${ENABLE_OCR}
+
+ARG ENABLE_DOC_READER=false
+ENV ENABLE_DOC_READER=${ENABLE_DOC_READER}
+
+ARG ENABLE_CHROMADB_CLIENT=false
+ENV ENABLE_CHROMADB_CLIENT=${ENABLE_CHROMADB_CLIENT}
+
+ARG ENABLE_LANGCHAIN=false
+ENV ENABLE_LANGCHAIN=${ENABLE_LANGCHAIN}
+
+ARG ENABLE_APIFY_CLIENT=false
+ENV ENABLE_APIFY_CLIENT=${ENABLE_APIFY_CLIENT}
+
+ARG ENABLE_LANGUAGE_DETECTION=false
+ENV ENABLE_LANGUAGE_DETECTION=${ENABLE_LANGUAGE_DETECTION}
+
+# copies compiled psql and libpq.so, libpq.so.5, libpq.so.5.16 from builder stage
+COPY --from=builder /tmp/psql/bin/psql /usr/local/bin/psql
+COPY --from=builder /tmp/postgresql/src/interfaces/libpq/libpq.so* /lib/x86_64-linux-gnu/
+COPY --from=builder --chown=iqa:iqa /opt/nginx/ /opt/nginx/
+COPY --from=builder --chown=iqa:iqa /opt/pcre2/* /opt/pcre2/
+
+ENV PATH="/home/iqa/bench/env/bin:${PATH}"
+
+# COPY --chmod=0755 delivery/resources/frappe-patches.sh /home/iqa/frappe-patches.sh
+# COPY --chmod=0755 delivery/resources/iq_core-patches.sh /home/iqa/iq_core-patches.sh
+
+USER root
+
+RUN apt-get update && apt-get -y install git \
+	jq \
+	vim \
+	gcc \
+	# libs for pcre2 compilation \
+	libbz2-dev \
+	cmake \
+	libtool \
+	m4 \
+	automake \
+	build-essential \
+	wget; \
+	pip install frappe-bench
+
+USER iqa
+
+COPY --chown={{ cookiecutter.image_user }}:{{ cookiecutter.image_group }} ./{{ cookiecutter.app_name }} /home/frappe/frappe-bench/apps/{{ cookiecutter.app_name }}
+
+RUN set -x; \
+	python3 /opt/apps/iq_core/delivery/resources/setup_bench_apps.py \
+	--frappe-branch ${FRAPPE_BRANCH} \
+	--frappe-path ${FRAPPE_PATH} \
+	--custom-apps "${CUSTOM_APPS}" \
+	--home-dir /home/iqa \
+	--github-user ${GITHUB_USER} \
+	--github-token "${GITHUB_TOKEN}";
+
+##
+
+WORKDIR /home/iqa/bench
+USER root
+
+COPY --chmod=0755 delivery/resources/docker-patches.sh /home/iqa/docker-patches.sh
+
+RUN set -x; \
+	bash /home/iqa/docker-patches.sh; \
+	# make iq_core get installed for all new sites by default
+	# jq '.install_apps += ["'$IQ_APP_NAME'"]' /home/iqa/bench/sites/common_site_config.json > /home/iqa/bench/temp_common_site_config.json && mv /home/iqa/bench/temp_common_site_config.json /home/iqa/bench/sites/common_site_config.json; \
+	chown -R iqa:iqa /home/iqa/bench/sites/; \
+	chmod -R g+rw /home/iqa/bench/sites/; \
+	chmod -R g+rw /home/iqa/bench/config; \
+	chmod -R g+rw /opt/nginx/
+
+USER iqa
+# adjust several file permissions
+RUN	chown -R iqa:iqa /run/nginx.pid ; \
+	mkdir -p /opt/nginx/client_body_temp /opt/nginx/proxy_temp; \
+	chmod 775 /opt/nginx/client_body_temp /opt/nginx/proxy_temp; \
+	chmod 775 /home/iqa/bench/logs; \
+	chmod -R 664 /home/iqa/bench/logs/*; \
+	find /home/iqa/bench/sites_assets/ -type d -print0 | xargs -0 -r chmod 775 ; \
+	find /home/iqa/bench/sites_assets/ -type f -print0 | xargs -0 -r chmod 644 ;
+
+USER iqa
+
+# Verify changes were made
+RUN set -e; \
+	if [ ! -d '/home/iqa/bench/apps/iq_core' ]; then \
+	echo 'Missing app iq_core'; \
+	exit 1; \
+	fi; \
+	if ! grep -q 'Starting IQ' /home/iqa/bench/apps/frappe/frappe/desk/page/setup_wizard/setup_wizard.js; then \
+	echo 'docker-patches.sh might not have run completely'; \
+	exit 1; \
+	fi
+
+# ##############################
+# Stage 2: Build mkdocs documentation
+# ##############################
+FROM dev-base AS docs-builder
+
+RUN pip install mkdocs-material
+
+WORKDIR /home/iqa/bench
+# RUN mkdocs build --site-dir dist
+RUN bench mkdocs-build
+
+# ##############################
+# Stage 3: Final image combining results
+# ##############################
+FROM dev-base AS final
+
+# Copy the built docs from the docs-builder stage
+COPY --from=docs-builder --chown=iqa:iqa /home/iqa/bench/apps/iq_core/iq_core/mkdocs/dist /home/iqa/bench/apps/iq_core/iq_core/mkdocs/dist
+
+USER iqa
+WORKDIR /home/iqa/bench
+

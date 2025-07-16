@@ -1,0 +1,131 @@
+{
+  // Use IntelliSense to learn about possible attributes.
+  // Hover to view descriptions of existing attributes.
+  // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Console",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/env/bin/bench",
+      "args": [
+        "--site",
+        "iq_site",
+        "console",
+      ],
+      "python": "${workspaceFolder}/env/bin/python",
+      "cwd": "${workspaceFolder}/sites",
+      "justMyCode": false,
+      "env": {
+        "DEV_SERVER": "1"
+      }
+    },
+    {
+      "name": "Debug Web",
+      "type": "debugpy",
+      "request": "launch",
+	    "python": "${workspaceFolder}/env/bin/python3",
+      "program": "${workspaceFolder}/env/bin/bench",
+      "preLaunchTask": "Prepare Debug Web",
+      "args": [
+        "serve",
+        "--port",
+        "8000",
+        "--noreload",
+        "--nothreading"
+      ],
+      "cwd": "${workspaceFolder}/sites",
+      "justMyCode": false,
+      "env": {
+        "DEV_SERVER": "1"
+      }
+    },
+    {
+      "name": "Debug Short Worker",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/env/bin/bench",
+      "args": ["worker", "--queue", "short"],
+      "python": "${workspaceFolder}/env/bin/python3",
+      "cwd": "${workspaceFolder}/sites",
+      "justMyCode": false,
+      "preLaunchTask": "Prepare Debug Worker",
+      "env": {
+        "DEV_SERVER": "1"
+      }
+    },
+    {
+      "name": "Debug Long Worker",
+      "type": "debugpy",
+      "request": "launch",
+      "python": "${workspaceFolder}/env/bin/python3",
+      "program": "${workspaceFolder}/env/bin/bench",
+      "args": ["worker", "--queue", "long"],
+      "cwd": "${workspaceFolder}/sites",
+      "justMyCode": false,
+      "preLaunchTask": "Prepare Debug Worker",
+      "env": {
+        "DEV_SERVER": "1"
+      }
+    },
+    {
+      "name": "Start without Web",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "/home/frappe/.local/bin/honcho",
+      "python": "${workspaceFolder}/env/bin/python",
+      "cwd": "${workspaceFolder}",
+      "justMyCode": false,
+      "console": "internalConsole",
+      "args": [
+        "start",
+        "socketio",
+        "watch",
+        "schedule",
+        "worker_short",
+        "worker_long",
+        "worker_default"
+      ]
+    },
+    {
+      "name": "Debug Unit Test",
+      "python": "${workspaceFolder}/env/bin/python3",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/env/bin/bench",
+      "args": [
+        "--site",
+        "test_iq_site",
+        "run-tests",
+        "--app",
+        "{{ cookiecutter.app_name }}",
+        // "--doctype", "Automation Import",
+        // "--doctype", "Automation Cleaner",
+        "--doctype", "Automation Stream",
+        // "--doctype", "Automation Runs",
+        "--doctype", "JS Loader",
+        "--test", "test_js_loader_retrieval",
+        // "--test", "test_serialized_props_may_not_return_on_list_apis",
+        // "--test", "test_serialized_props_may_not_return_on_export_apis",
+        // "--test", "test_masked_and_trimmed_properties",
+        // "--test", "test_type_conversion",
+        // "--test", "test_sensitive_data_masking",
+        // "--test", "test_delete_message_file_attachments",
+        // "--test", "test_selective_field_deletion_with_jmespath",
+        // "--doctype", "Automation",
+        // "--test", "test_circular_node_dependencies",
+        // "--test", "test_automation_runner_with_dynamic_ports",
+        // "--test", "test_automation_runner_with_dynamic_multi_input_port",
+        // "--test", "test_deletion_state_dependent_on_status",
+        // "--module", "iq_core.automation.declaration.test_declaration",
+        // "--test", "test_tool_import_intf_multi_connections",
+        // "--test", "test_input_param_types_and_defaults",
+        // "--test", "test_bool_ports_default_values",
+        "--skip-test-records"
+      ],
+      "console": "integratedTerminal",
+      "justMyCode": false
+    },
+  ]
+}

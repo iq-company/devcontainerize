@@ -1,0 +1,17 @@
+services:
+  init:
+    image: ${CUSTOM_IMAGE:-iq-release}:${CUSTOM_TAG:-latest}
+    platform: linux/amd64
+    env_file:
+      - ./.env
+    volumes:
+      - sites:/home/iqa/bench/sites
+      - ../scripts:/home/iqa/bench/bin-dev:ro
+    entrypoint: /home/iqa/bench/bin-dev/init_site.sh
+    depends_on:
+      db:
+        condition: service_started
+      redis-cache:
+        condition: service_started
+      redis-queue:
+        condition: service_started

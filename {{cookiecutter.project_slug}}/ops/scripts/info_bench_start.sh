@@ -1,0 +1,26 @@
+#!/bin/bash
+
+echo -e '\n\n\n\n\n\n\n'
+
+# Check if keybindings are installed
+if python /home/{{ cookiecutter.image_user }}/bench/bin-dev/check_iq_keybindings.py >/dev/null 2>&1; then
+	# Keybindings are installed
+	echo 'The following keyboard shortcuts are available:'
+	echo -e '\tF8 - Starts all services, if you stopped some of them in favor of debugging (or if something crashed)'
+	echo -e '\tF12 - Switch back to local view (stops all services)'
+	echo -e '\tCTRL+F12 - Reload the in-container window'
+	echo -e '\tF10 - Run predefined Tasks (create new app, install existing app, ...)'
+else
+	# Keybindings are not installed
+	echo 'Keyboard shortcuts are not installed yet.'
+	echo -e '\t	To install them, run: python /home/{{ cookiecutter.image_user }}/bench/bin-dev/install_iq_keybindings.py'
+fi
+
+echo -e '\n'
+
+echo -e "{{ cookiecutter.project_name }} is now reachable on your host system on:
+	http://localhost:$NGINX_PORT"
+echo -e "\t(initial Administrator PW: $IQ_ADMIN_PW)\n"
+echo -e 'Find further documentation at http://localhost:8000/docs, or Database manager at http://localhost:8015'
+
+echo -e '\n'

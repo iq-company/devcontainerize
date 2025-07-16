@@ -1,0 +1,22 @@
+# Environment Variables
+.env
+
+# mounted volume
+sites
+
+# Pycharm
+.idea
+
+# VS Code
+!.vscode/extensions.json
+
+# VS Code devcontainer
+*.code-workspace
+
+# Python
+*.pyc
+__pycache__
+venv
+
+# NodeJS
+node_modules

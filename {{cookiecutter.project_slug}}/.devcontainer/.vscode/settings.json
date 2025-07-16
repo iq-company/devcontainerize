@@ -1,0 +1,8 @@
+{
+  "python.defaultInterpreterPath": "/home/{{ cookiecutter.image_user }}/bench/env/bin/python",
+  "python.analysis.extraPaths": [
+    "./apps/frappe",
+    "./apps/{{ cookiecutter.app_name }}"
+	],
+  "iq.keybindings.enabled": true
+}

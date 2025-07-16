@@ -1,0 +1,74 @@
+#!/usr/bin/env python3
+import os
+import sys
+
+def find_first_nonempty_dir(dirs):
+    """Find the first non-empty directory from a list of potential directories"""
+    for d in dirs:
+        if os.path.isdir(d):
+            try:
+                # If at least one file or subdirectory exists
+                if os.listdir(d):
+                    return d
+            except Exception as e:
+                print(f"Error accessing {d}: {e}")
+    return None
+
+def read_file(path):
+    """Read file content with proper encoding"""
+    with open(path, 'r', encoding='utf-8') as f:
+        return f.read()
+
+def check_keybindings_installed():
+    """Check if IQ keybindings are installed in any VSCode user directory"""
+    # The three possible directories (mounted in the container)
+    dirs = [
+        "/home/{{ cookiecutter.image_user }}/.vscode-host",
+        # "/home/iqa/.vscode-linux",
+        # "/home/iqa/.vscode-macosx"
+    ]
+
+    # Find the first non-empty VSCode user directory
+    workdir = find_first_nonempty_dir(dirs)
+    if workdir is None:
+        print("No VSCode user directory found.")
+        return False
+
+    # Check if keybindings.json exists
+    keybindings_path = os.path.join(workdir, "keybindings.json")
+    if not os.path.isfile(keybindings_path):
+        print("No keybindings.json file found.")
+        return False
+
+    try:
+        # Read the keybindings file
+        content = read_file(keybindings_path)
+
+        # Check for IQ shortcuts markers
+        if "// iq shortcuts - begin" in content and "// iq shortcuts - end" in content:
+            print("IQ keybindings are installed.")
+            return True
+        elif "// iq shortcuts - prevent changes" in content:
+            print("IQ keybindings installation was explicitly prevented.")
+            return False
+        else:
+            print("IQ keybindings are not installed.")
+            return False
+
+    except Exception as e:
+        print(f"Error reading keybindings.json: {e}")
+        return False
+
+def main():
+    """Main function that returns an exit code based on keybindings status"""
+    # Check if keybindings are installed
+    if check_keybindings_installed():
+        # Return exit code 0 if keybindings are installed
+        sys.exit(0)
+    else:
+        # Return exit code 1 if keybindings are not installed
+        sys.exit(1)
+
+if __name__ == "__main__":
+    main()
+

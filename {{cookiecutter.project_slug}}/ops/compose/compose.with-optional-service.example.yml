@@ -1,0 +1,9 @@
+services:
+  ocr-rt:
+    profiles:
+      - ocr
+    # image: ocr-rt # needs to be build first (#1 in delivery/resources/Dockerfile.ocr_extensions)
+    build: ../../delivery/resources/ocr-extensions
+    volumes:
+    - sites:/iq_sites
+

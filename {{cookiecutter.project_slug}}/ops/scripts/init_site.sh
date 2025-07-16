@@ -1,0 +1,177 @@
+#!/usr/bin/env bash
+
+set -e # Exit on errors
+
+# Source the environment file to get all necessary variables
+# The file is created by init_env_files.sh
+
+DB_SCHEMA=${DB_SCHEMA:-iq_schema}
+
+BENCH_DIR="/home/iqa/bench"
+APPS_DIR="/home/iqa/bench/apps"
+
+echo "Waiting for database to start..."
+
+if [ "$DBMS" == "postgres" ]; then
+    wait-for-it $DB_HOST:$DB_PORT
+    echo "POSTGRES $DB_HOST:$DB_PORT is ready"
+
+elif [ "$DBMS" == "mariadb" ]; then
+    wait-for-it $DB_HOST:$DB_PORT
+    echo "MARIADB $DB_HOST:$DB_PORT is ready"
+
+else
+    echo "Error: Unknown DBMS specified in .env: $DBMS" >&2
+    exit 1
+fi
+
+export FRAPPE_STREAM_LOGGING=true
+export NEWLY_LINKED_APPS
+
+# Ensure all apps have .pth files in site-packages
+/home/iqa/bench/bin-dev/check_and_setup_pth_files.sh
+
+# Check if node_modules needs to be initialized for locally mounted apps
+while IFS= read -r app_dir; do
+	if [ ! -d "$app_dir/node_modules" ]; then
+		node_modules_installed=true
+		app_name=$(basename "$app_dir")
+
+		echo "Initializing node_modules for app $app_name ..."
+		bench setup requirements --node $app_name
+	fi
+done < <(find "$APPS_DIR" -mindepth 1 -maxdepth 1 -type d)
+
+if [ "$node_modules_installed" = true ]; then
+	echo "Building assets ..."
+	bench build --production
+fi
+
+# Init site
+echo "Setting up site $IQ_SITE_NAME ..."
+# read "default_site" property from common_site_config.json
+# if var is not set already
+if [ -z "$IQ_SITE_NAME" ]; then
+	IQ_SITE_NAME=$(jq -r '.default_site' sites/common_site_config.json)
+fi
+
+if [ ! -d "sites/$IQ_SITE_NAME" ]; then
+	if [ -z "$IQ_SITE_NAME" ]; then
+		echo "IQ_SITE_NAME is empty. Please set it in .env"
+		exit 1
+	fi
+
+	# Set Redis configuration before site creation/migration
+	bench set-config -g default_site "$IQ_SITE_NAME"
+	bench set-config -g redis_cache "redis://$REDIS_CACHE"
+	bench set-config -g redis_queue "redis://$REDIS_QUEUE"
+	bench set-config -g redis_socketio "redis://$REDIS_QUEUE"
+	bench set-config -gp socketio_port $SOCKETIO_PORT
+	bench set-config -g server_script_enabled 1
+	bench set-config -g developer_mode 1
+
+	if [ "$DBMS" == "postgres" ]; then
+		# check if database is already present
+		RESULT=$(PGPASSWORD="$DB_ROOT_PASSWORD" psql -U postgres -h "$DB_HOST" -p "$DB_PORT" -tAc "SELECT 1 FROM pg_database WHERE datname='$DB_NAME';")
+
+		if [ "$RESULT" == "1" ]; then
+			echo "🛑 DB '$DB_NAME' already exists on DB (but not on FS)."
+			exit 1
+		else
+			echo "Setting up new db, user, schema ..."
+			PGPASSWORD="$DB_ROOT_PASSWORD" psql -h $DB_HOST -p $DB_PORT -U postgres -d postgres <<-EOF
+				CREATE DATABASE $DB_NAME;
+				CREATE USER $DB_SUPER_USER WITH PASSWORD '$DB_SUPER_USER_PW';
+				GRANT ALL PRIVILEGES ON DATABASE $DB_NAME TO $DB_SUPER_USER;
+
+				CREATE SCHEMA $DB_SCHEMA AUTHORIZATION $DB_SUPER_USER;
+				REVOKE ALL PRIVILEGES ON SCHEMA public FROM $DB_SUPER_USER;
+				REVOKE CREATE ON SCHEMA public FROM $DB_SUPER_USER;
+
+				CREATE USER $DB_USER WITH PASSWORD '$DB_PASSWORD';
+				GRANT CONNECT ON DATABASE $DB_NAME TO $DB_USER;
+				GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA $DB_SCHEMA TO $DB_USER;
+				ALTER DEFAULT PRIVILEGES IN SCHEMA $DB_SCHEMA GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO $DB_USER;
+				ALTER DEFAULT PRIVILEGES IN SCHEMA $DB_SCHEMA GRANT SELECT, USAGE ON SEQUENCES TO $DB_USER;
+
+				ALTER USER "$DB_USER" SET search_path TO $DB_SCHEMA;
+				COMMIT;
+EOF
+
+			echo "Creating site $IQ_SITE_NAME ..."
+			bench new-pg-site $IQ_SITE_NAME \
+				--db-host $DB_HOST \
+				--db-port $DB_PORT \
+				--db-root-username $DB_SUPER_USER \
+				--db-root-password $DB_SUPER_USER_PW \
+				--admin-password $IQ_ADMIN_PW \
+				--db-name $DB_NAME \
+				--db-schema-name $DB_SCHEMA \
+				--db-user ${DB_USER:-$DB_SUPER_USER} \
+				--db-user-password ${DB_PASSWORD:-$DB_SUPER_USER_PW} \
+				--install-app {{ cookiecutter.app_name }} \
+				--auto-rollback
+		fi
+
+		bench --site $IQ_SITE_NAME pg-migrate --db-root-username $DB_SUPER_USER --db-root-password $DB_SUPER_USER_PW
+
+	elif [ "$DBMS" == "mariadb" ]; then
+		# check if database is already present
+		RESULT=$(mysql -h "$DB_HOST" -P "$DB_PORT" -u root -p"$DB_ROOT_PASSWORD" -e "SHOW DATABASES LIKE '$DB_NAME';" | grep "$DB_NAME")
+
+		if [ -n "$RESULT" ]; then
+			echo "🛑 DB '$DB_NAME' already exists on DB (but not on FS)."
+			exit 1
+		else
+			echo "Setting up new db, user ..."
+			mysql -h $DB_HOST -P $DB_PORT -u root -p"$DB_ROOT_PASSWORD" <<-EOF
+				CREATE DATABASE $DB_NAME;
+				CREATE USER '$DB_USER'@'%' IDENTIFIED BY '$DB_PASSWORD';
+				GRANT ALL PRIVILEGES ON $DB_NAME.* TO '$DB_USER'@'%';
+				FLUSH PRIVILEGES;
+EOF
+
+			echo "Creating site $IQ_SITE_NAME ..."
+			bench new-site $IQ_SITE_NAME \
+				--db-host $DB_HOST \
+				--db-port $DB_PORT \
+				--mariadb-root-password $DB_ROOT_PASSWORD \
+				--admin-password $IQ_ADMIN_PW \
+				--db-name $DB_NAME \
+				--db-user $DB_USER \
+				--db-password $DB_PASSWORD \
+				--install-app {{ cookiecutter.app_name }} \
+				--auto-rollback
+		fi
+
+		bench --site $IQ_SITE_NAME migrate
+
+	else
+		echo "Error: Unknown DBMS specified in .env: $DBMS" >&2
+		exit 1
+	fi
+fi
+
+# if APP env is set, install the app if its not frappe or iq_core
+if [ -n "$APP" ] && [ "$APP" != "frappe" ] && [ "$APP" != "iq_core" ]; then
+	bench --site $IQ_SITE_NAME install-app "$APP"
+else
+	# otherwise all apps are part of the image (available in apps.txt, each line one app), also install them
+	apps=$(cat /home/{{ cookiecutter.image_user }}/bench/sites/apps.txt)
+	for app in $apps; do
+		if [ "$app" != "frappe" ] && [ "$app" != "{{ cookiecutter.app_name }}" ]; then
+			bench --site $IQ_SITE_NAME install-app "$app"
+		fi
+	done
+fi
+
+# if IQ_SITE_NAME starts with "test_", then set-config to make it a test site
+if [[ $IQ_SITE_NAME == test_* ]]; then
+	bench --site $IQ_SITE_NAME set-config allow_tests true
+fi
+
+# When started from devcontainers (DEV_CONTAINER=1), several further adjustments for vscode will be made
+if [ -n "$DEV_CONTAINER" ]; then
+	# Placeholder for any future devcontainer-specific logic
+	echo "Devcontainer-specific setup can be added here."
+fi

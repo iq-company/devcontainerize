@@ -1,0 +1,22 @@
+services:
+  db:
+    image: mariadb:10.6
+    restart: on-failure
+    platform: linux/amd64
+    command:
+      - "--character-set-server=utf8mb4"
+      - "--collation-server=utf8mb4_unicode_ci"
+    ports:
+      - "${DB_PORT}:3306"
+    volumes:
+      - mariadb_data:/var/lib/mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  mariadb_data:

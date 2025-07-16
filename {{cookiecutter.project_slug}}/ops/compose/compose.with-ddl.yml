@@ -1,0 +1,7 @@
+# This file defines a reusable YAML anchor for applying DDL profile settings.
+
+x-ddl-override: &ddl_override
+  profiles: ["ddl"]
+  environment:
+    DB_USER: ""
+    DB_PASSWORD: ""

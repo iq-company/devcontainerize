@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+
+APP_NAME="$1"
+CUSTOM_APPS_DIR="/home/iqa/bench/custom_apps"
+APPS_DIR="/home/iqa/bench/apps"
+
+if [ -d "${APPS_DIR}/${APP_NAME}" ] || [ -d "${CUSTOM_APPS_DIR}/${APP_NAME}" ]; then
+    echo "App '${APP_NAME}' existiert bereits. Abbruch."
+    exit 1
+fi
+
+bench new-app "$APP_NAME"
+if [ $? -ne 0 ]; then
+    echo "Fehler: 'bench new-app' fehlgeschlagen"
+    exit 1
+fi
+
+mv "${APPS_DIR}/${APP_NAME}" "${CUSTOM_APPS_DIR}/"
+ln -s "${CUSTOM_APPS_DIR}/${APP_NAME}" "${APPS_DIR}/${APP_NAME}"
+echo "App '${APP_NAME}' erstellt, verschoben und verlinkt."
+

@@ -1,0 +1,29 @@
+include:
+  - ./compose.with-ocr-ext.yml
+  - ./compose.${DBMS:-postgres}.yml
+
+services:
+  redis-cache:
+    image: docker.io/redis:alpine
+    platform: linux/amd64
+
+  redis-queue:
+    image: docker.io/redis:alpine
+    platform: linux/amd64
+
+  # (optional) db admin tool, for db table investigation
+  webdb:
+    image: webdb/app
+    restart: always
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - "${HOME}/.webdb:/usr/src/app/static/version"
+      - "${HOME}/.ssh:/root/.ssh:ro"
+    ports:
+      - "${WEBDB_PORT}:22071"
+
+volumes:
+  apps:
+  sites:
+

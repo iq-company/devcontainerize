@@ -1,0 +1,49 @@
+# This compose file extends the base compose.yml for the development environment.
+# It mounts local source code and defines the main application service for debugging.
+
+version: "3.8"
+
+x-backend-defaults: &backend_defaults
+  <<: *ddl_override
+  image: "${{ '{' }}{{ cookiecutter.image_prefix }}-dev}:${IQ_IMAGE_TAG}"
+  platform: linux/amd64
+  volumes:
+    - ../scripts:/home/iqa/bench/bin-dev # Correct path from ops/compose to ops/scripts
+    - sites:/home/iqa/bench/sites
+    - apps:/home/iqa/bench/apps
+    - type: bind
+      source: "${VSCODE_SETTINGS_PATH}"
+      target: "/home/iqa/.vscode-host"
+  env_file:
+    - ./.env
+
+services:
+  init:
+    <<: *backend_defaults
+    command: bash -c "DEV_CONTAINER=1 /home/iqa/bench/bin-dev/init_site.sh"
+    depends_on:
+      db:
+        condition: service_started
+      redis-cache:
+        condition: service_started
+      redis-queue:
+        condition: service_started
+
+  app:
+    <<: *backend_defaults
+    entrypoint:
+      - bash
+      - -c
+    command:
+      - |
+        bench start &
+        exec sleep infinity
+    environment:
+      FRAPPE_SITE_NAME_HEADER: ${IQ_SITE_NAME_HEADER:-$$host}
+    ports:
+      - "${NGINX_PORT}:8000"
+      - "8020:8020"
+    depends_on:
+      init:
+        condition: service_completed_successfully
+

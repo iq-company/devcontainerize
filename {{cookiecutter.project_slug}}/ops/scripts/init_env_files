@@ -1,0 +1,104 @@
+#!/bin/bash
+
+# Cross-platform script to create a single .env file if it doesn't exist
+# This script is called by VSCode devcontainer initializeCommand
+
+set -ex # Added -x for debugging
+
+# Determine .devcontainer directory
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+OPS_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+TARGET_ENV_FILE="$OPS_DIR/compose/.env"
+TEMPLATE_FILE="$OPS_DIR/env/.env.template"
+
+# --- Handle DBMS selection (always run) ---
+
+echo "DEBUG: Parameter 1 is: '$1'"
+# Determine DBMS choice (argument, then environment variable, then default)
+DBMS=""
+if [ -n "$1" ]; then
+	DBMS=$(echo "$1" | tr '[:upper:]' '[:lower:]')
+elif [ -n "$DEVCONTAINER_DBMS" ]; then
+	DBMS=$(echo "$DEVCONTAINER_DBMS" | tr '[:upper:]' '[:lower:]')
+else
+	DBMS="postgres"
+fi
+echo "DEBUG: DBMS after selection: '$DBMS'"
+
+if [[ "$DBMS" != "postgres" && "$DBMS" != "mariadb" ]]; then
+	echo "Warning: Invalid DBMS specified ($DBMS). Defaulting to postgres."
+	DBMS="postgres"
+fi
+
+DB_HOST_VAL=""
+DB_PORT_VAL=""
+if [ "$DBMS" = "postgres" ]; then
+	DB_HOST_VAL="pg"
+	DB_PORT_VAL="5432"
+elif [ "$DBMS" = "mariadb" ]; then
+	DB_HOST_VAL="mariadb"
+	DB_PORT_VAL="3306"
+fi
+
+# --- Create .env file if it doesn't exist ---
+
+if [ -f "$TARGET_ENV_FILE" ]; then
+	echo "Environment file '$TARGET_ENV_FILE' already exists. Skipping creation."
+else
+	echo "Creating environment file '$TARGET_ENV_FILE'..."
+
+	# --- Gather required values ---
+
+	CURRENT_GID=$(id -g)
+	CURRENT_UID=$(id -u)
+	RANDOM_LOWER=$(LC_ALL=C tr -dc a-z </dev/urandom | head -c 5)
+
+	# Determine VSCode settings path
+	if [ -d "${HOME}/Library/Application Support/Code/User/" ]; then
+		VSCODE_SETTINGS_PATH="${HOME}/Library/Application Support/Code/User/"
+	elif [ -d "${HOME}/.config/Code/User/" ]; then
+		VSCODE_SETTINGS_PATH="${HOME}/.config/Code/User/"
+	else
+		VSCODE_SETTINGS_PATH="/tmp/.vscode-host"
+	fi
+
+	# --- Generate random passwords and user names ---
+	IQ_ADMIN_PW_VAL=$(LC_ALL=C tr -dc 'a-zA-Z0-9' </dev/urandom | head -c 16)
+	DB_SUPER_USER_VAL="ddl_user_"$(LC_ALL=C tr -dc a-z0-9 </dev/urandom | head -c 5)
+	DB_SUPER_USER_PW_VAL=$(LC_ALL=C tr -dc 'a-zA-Z0-9' </dev/urandom | head -c 16)
+	DB_ROOT_PASSWORD_VAL=$(LC_ALL=C tr -dc 'a-zA-Z0-9' </dev/urandom | head -c 16)
+	DB_PASSWORD_VAL=$(LC_ALL=C tr -dc 'a-zA-Z0-9' </dev/urandom | head -c 16)
+
+	# --- Create file from template and replace placeholders ---
+
+	cp "$TEMPLATE_FILE" "$TARGET_ENV_FILE"
+
+	# General placeholders
+	sed -i "s/{{random_lower}}/$RANDOM_LOWER/g" "$TARGET_ENV_FILE"
+	sed -i "s|{{vscode_settings_path}}|$VSCODE_SETTINGS_PATH|g" "$TARGET_ENV_FILE"
+	sed -i "s/{{uid}}/$CURRENT_UID/g" "$TARGET_ENV_FILE"
+	sed -i "s/{{gid}}/$CURRENT_GID/g" "$TARGET_ENV_FILE"
+	sed -i "s/IQ_ADMIN_PW={{random_password}}/IQ_ADMIN_PW=$IQ_ADMIN_PW_VAL/" "$TARGET_ENV_FILE"
+
+	# Database placeholders
+	sed -i "s/{{db_host}}/$DB_HOST_VAL/g" "$TARGET_ENV_FILE"
+	sed -i "s/{{db_port}}/$DB_PORT_VAL/g" "$TARGET_ENV_FILE"
+	sed -i "s/{{db_super_user}}/$DB_SUPER_USER_VAL/g" "$TARGET_ENV_FILE"
+	sed -i "s/{{db_super_user_pw}}/$DB_SUPER_USER_PW_VAL/g" "$TARGET_ENV_FILE"
+	sed -i "s/{{db_root_password}}/$DB_ROOT_PASSWORD_VAL/g" "$TARGET_ENV_FILE" # Corrected placeholder
+	sed -i "s/{{db_password}}/$DB_PASSWORD_VAL/g" "$TARGET_ENV_FILE"
+	sed -i "s/{{dbms}}/$DBMS/g" "$TARGET_ENV_FILE"
+
+	# --- Append DBMS-specific addon if it exists ---
+	ADDON_FILE="$OPS_DIR/env/.env.$DBMS.addon.template"
+	if [ -f "$ADDON_FILE" ]; then
+		echo -e "
+# --- Appending $DBMS-specific settings ---" >> "$TARGET_ENV_FILE"
+		cat "$ADDON_FILE" >> "$TARGET_ENV_FILE"
+	fi
+
+	echo "Environment file '$TARGET_ENV_FILE' created successfully with DBMS: $DBMS."
+fi
+
+exit 0

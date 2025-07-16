@@ -1,0 +1,54 @@
+{
+	"name": "IQ Dev",
+	"remoteUser": "iqa",
+	"customizations": {
+		"vscode": {
+			"extensions": [
+				"ms-python.python",
+				"ms-vscode.live-server",
+				"grapecity.gc-excelviewer",
+				"mtxr.sqltools",
+				"visualstudioexptteam.vscodeintellicode"
+			],
+			"settings": {
+				"remote.autoForwardPorts": false,
+				"remote.restoreForwardedPorts": false,
+				"terminal.integrated.profiles.linux": {
+					"bash": {
+						"path": "/bin/bash"
+					}
+				},
+				"terminal.integrated.defaultProfile.linux": "bash",
+				"debug.node.autoAttach": "disabled"
+			}
+		}
+	},
+	// "portsAttributes": {
+	//   "8010": {
+	//     "label": "IQ Web Application",
+	//     "onAutoForward": "ignore"
+	//   },
+	//   "8015": {
+	//     "label": "Database WebDB Interface",
+	//     "onAutoForward": "ignore"
+	//   }
+	// },
+	"dockerComposeFile": [
+		"../ops/compose/compose.base.yml",
+		"./compose.dev.override.yml",
+	],
+	"service": "app",
+	"workspaceFolder": "/home/iqa/bench",
+	"initializeCommand": "bash -c \"${localWorkspaceFolder}/ops/scripts/init_env_files postgres\"",
+	"postStartCommand": "bash -c \"python /home/{{ cookiecutter.image_user }}/bench/bin-dev/install_iq_keybindings.py && wait-for-it localhost:8000 && /home/{{ cookiecutter.image_user }}/bench/bin-dev/info_bench_start.sh\"",
+	"shutdownAction": "stopCompose", // stop containers on vscode window close
+	"mounts": [
+		"source=${localEnv:HOME}${localEnv:USERPROFILE}/.ssh,target=/home/iqa/.ssh,type=bind,consistency=delegated",
+		"source=${localWorkspaceFolder}/.devcontainer,target=/home/iqa/bench/.devcontainer,type=bind,consistency=delegated",
+		"source=${localWorkspaceFolder}/.devcontainer/.vscode,target=/home/iqa/bench/.vscode,type=bind,consistency=delegated",
+		"source=${localWorkspaceFolder}/.devcontainer/honcho/Procfile,target=/home/iqa/bench/Procfile,type=bind,consistency=delegated",
+		"source=${localWorkspaceFolder}/.devcontainer/honcho/Procfile_skip_web,target=/home/iqa/bench/Procfile_skip_web,type=bind,consistency=delegated",
+		"source=${localWorkspaceFolder}/.devcontainer/honcho/Procfile_skip_worker,target=/home/iqa/bench/Procfile_skip_worker,type=bind,consistency=delegated",
+		"source=${localWorkspaceFolder},target=/home/iqa/bench/apps/{{ cookiecutter.app_name }},type=bind,consistency=delegated"
+	]
+}

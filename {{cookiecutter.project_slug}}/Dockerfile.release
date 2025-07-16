@@ -1,0 +1,49 @@
+ARG BASE_IMAGE_SOURCE
+ARG DEV_IMAGE_SOURCE
+
+# Stage 1: Cleaning stage
+FROM ${DEV_IMAGE_SOURCE:-iq-dev} AS cleaner
+
+USER root
+
+WORKDIR /home/iqa/bench
+
+# Run app-specific cleanup tasks defined in hooks
+RUN PYTHON_PATH=/home/iqa/bench/apps python apps/iq_core/delivery/resources/call_root_iq_release_dist.py
+
+# Stage 2: Final stage with only cleaned files
+FROM ${BASE_IMAGE_SOURCE:-iq-base} AS final
+
+USER root
+
+RUN find /home/iqa/bench/sites_assets/ -type d -print0 | xargs -0 -r chmod 775 ; \
+	find /home/iqa/bench/sites_assets/ -type f -print0 | xargs -0 -r chmod 644 ;
+
+RUN rm -rf /home/iqa/.nvm/versions/node/v*/lib/node_modules/npm/node_modules/*; \
+	rm -rf /home/iqa/.nvm/versions/node/v*/lib/node_modules/npm; \
+	rm -rf /home/iqa/.nvm/versions/node/v*/lib/node_modules/corepack/shims/npm; \
+	rm -rf /home/iqa/.nvm/versions/node/v*/lib/node_modules/corepack/shims/*/npm; \
+	rm -rf /home/iqa/.nvm/versions/node/v*/bin/npm; \
+	/usr/local/bin/pip uninstall -y pip
+
+# Copy only the cleaned files from the cleaner stage
+COPY --from=cleaner --chown=iqa:iqa /home/iqa/bench /home/iqa/bench
+COPY --from=cleaner /usr/local/bin/psql /usr/local/bin/psql
+COPY --from=cleaner /lib/x86_64-linux-gnu/libpq.so* /lib/x86_64-linux-gnu/
+COPY --from=cleaner --chown=iqa:iqa /opt/nginx/ /opt/nginx/
+COPY --from=cleaner --chown=iqa:iqa /opt/pcre2/* /opt/pcre2/
+
+ENV PATH="/home/iqa/bench/env/bin:${PATH}"
+
+USER iqa
+
+RUN chmod -R g+rw /home/iqa/bench/config
+
+WORKDIR /home/iqa/bench
+
+VOLUME [ \
+	"/home/iqa/bench/sites" \
+	# "/home/iqa/bench/sites/assets" \
+	# "/home/iqa/bench/logs" \
+	]
+

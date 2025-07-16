@@ -1,0 +1,47 @@
+# This compose file extends the base compose.yml for the "release" scenario.
+
+x-backend-defaults: &backend_defaults
+  <<: *ddl_override
+  image: ${{ '{' }}{{ cookiecutter.image_prefix }}-release:-latest}
+  platform: linux/amd64
+  volumes:
+    - sites:/home/iqa/bench/sites
+  env_file:
+    - ./.env
+  depends_on:
+    init:
+      condition: service_completed_successfully
+
+services:
+  backend:
+    <<: *backend_defaults
+    command: bench serve
+
+  frontend:
+    <<: *backend_defaults
+    command: nginx-entrypoint.sh
+    environment:
+      BACKEND: backend:8000
+      SOCKETIO: websocket:9000
+      FRAPPE_SITE_NAME_HEADER: ${IQ_SITE_NAME:-$host}
+    ports:
+      - "${NGINX_PORT}:8080"
+    depends_on:
+      - backend
+      - websocket
+
+  websocket:
+    <<: *backend_defaults
+    command: node /home/iqa/bench/apps/frappe/socketio.js
+
+  queue-short:
+    <<: *backend_defaults
+    command: bench worker --queue short,default
+
+  queue-long:
+    <<: *backend_defaults
+    command: bench worker --queue long,default,short
+
+  scheduler:
+    <<: *backend_defaults
+    command: bench schedule

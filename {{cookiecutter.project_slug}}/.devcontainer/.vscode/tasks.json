@@ -1,0 +1,209 @@
+{
+  "version": "2.0.0",
+  "inputs": [
+    {
+      "id": "appName",
+      "type": "promptString",
+      "description": "Enter the app name (lower case, no spaces, no special characters)"
+    },
+    {
+      "id": "appUrl",
+      "type": "promptString",
+      "description": "Enter the existing git url"
+    }
+  ],
+  "tasks": [
+    {
+      "label": "Docs: Build Docs",
+      "type": "shell",
+      "command": "source ${workspaceFolder}/apps/iq_core/ops/compose/.env && bench mkdocs-build",
+      "problemMatcher": [],
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "env": {
+          "LOCAL_DEV_ENV": "true"
+        }
+      },
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "shared"
+      }
+    },
+    {
+      "label": "Docs: Start hot-reloading Service",
+      "type": "shell",
+      "command": "source ${workspaceFolder}/apps/iq_core/ops/compose/.env && bench mkdocs-serve",
+      "problemMatcher": [],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "shared"
+      }
+    },
+    {
+      "label": "Start Procfile_skip_web",
+      "type": "shell",
+      "command": "source ${workspaceFolder}/env/bin/activate && bench start -p Procfile_skip_web",
+      "isBackground": true,
+      "problemMatcher": {
+        "pattern": [
+          {
+            "regexp": ".^",
+            "file": 1,
+            "location": 2,
+            "message": 3
+          }
+        ],
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": "watch.*started",
+          "endsPattern": "yarn run"
+        }
+	  },
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "shared"
+      }
+    },
+    {
+      "label": "Start Procfile_skip_worker",
+      "type": "shell",
+      "command": "source ${workspaceFolder}/env/bin/activate && bench start -p Procfile_skip_worker",
+      "isBackground": true,
+      "problemMatcher": {
+        "pattern": [
+          {
+            "regexp": ".^",
+            "file": 1,
+            "location": 2,
+            "message": 3
+          }
+        ],
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": "web.*started",
+          "endsPattern": "yarn run"
+        }
+      },
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "shared"
+      }
+    },
+    {
+      "label": "Apps: Create a new App",
+      "type": "shell",
+      "command": "source ${workspaceFolder}/apps/{{ cookiecutter.app_name }}/ops/compose/.env && ${workspaceFolder}/bin-dev/manage_app.py",
+      "options": {
+        "cwd": "${workspaceFolder}",
+      },
+      "args": [
+        "create",
+        "${input:appName}"
+      ],
+      "problemMatcher": []
+    },
+    {
+      "label": "Apps: Add existing App from a Repository",
+      "type": "shell",
+      "command": "source ${workspaceFolder}/apps/{{ cookiecutter.app_name }}/ops/compose/.env && ${workspaceFolder}/bin-dev/manage_app.py",
+      "args": [
+		"link",
+        "${input:appUrl}"
+      ],
+      "problemMatcher": []
+    },
+    {
+      "label": "Kill Running IQ Processes",
+      "type": "shell",
+      "command": "${workspaceFolder}/bin-dev/kill_running_processes.sh",
+      "problemMatcher": [],
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "shared"
+      }
+    },
+    {
+      "label": "Prepare Debug Web",
+      "dependsOn": [
+        "Kill Running IQ Processes",
+        "Start Procfile_skip_web"
+      ],
+      "dependsOrder": "sequence",
+      "type": "shell",
+      "problemMatcher": []
+    },
+    {
+      "label": "Prepare Debug Worker",
+      "dependsOn": [
+        "Kill Running IQ Processes",
+        "Start Procfile_skip_worker"
+      ],
+      "dependsOrder": "sequence",
+      "type": "shell"
+    },
+    {
+      "label": "Show Info",
+      "type": "shell",
+      "command": "source ${workspaceFolder}/apps/{{ cookiecutter.app_name }}/ops/compose/.env && wait-for-it localhost:8000 && ${workspaceFolder}/bin-dev/info_bench_start.sh",
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "echo": true,
+        "panel": "shared"
+      }
+    },
+    {
+      "label": "Start Bench",
+      "type": "shell",
+      "command": "source ${workspaceFolder}/env/bin/activate && bench start",
+      "isBackground": true,
+      "problemMatcher": {
+        "pattern": [
+          {
+            "regexp": ".^",
+            "file": 1,
+            "location": 2,
+            "message": 3
+          }
+        ],
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": "web.*started",
+          "endsPattern": "Watching for changes..."
+        }
+      },
+      "presentation": {
+        "reveal": "always",
+        "echo": true,
+        "panel": "shared"
+      }
+    },
+    {
+      "label": "Restart Bench",
+      "dependsOn": [
+        "Kill Running IQ Processes",
+        "Start Bench",
+        "Show Info"
+      ],
+      "dependsOrder": "sequence",
+      "type": "shell",
+      "problemMatcher": []
+    }
+  ]
+}
