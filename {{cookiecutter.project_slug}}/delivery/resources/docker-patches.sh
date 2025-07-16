@@ -2,16 +2,16 @@
 
 set -e
 
-# These patches are called with root user in directory /home/iqa/bench
+# These patches are called with root user in directory /home/${IMAGE_USER}/bench
 # Patches in container libraries are applied.
 
 # get current python version
-export PYTHON_VENV_VERSION=$(ls /home/iqa/bench/env/lib/ | grep -E '^python[0-9]+\.[0-9]+' | sort -V | tail -n 1)
+export PYTHON_VENV_VERSION=$(ls /home/${IMAGE_USER}/bench/env/lib/ | grep -E '^python[0-9]+\.[0-9]+' | sort -V | tail -n 1)
 
 # setup logstash monkey_patches
 INSERT_LINE="import iq_core.monkey_patches.inject_json_logstash"
 
-sed -i "/import sys/a $INSERT_LINE" "/home/iqa/bench/env/lib/$PYTHON_VENV_VERSION/site-packages/bench/cli.py"
+sed -i "/import sys/a $INSERT_LINE" "/home/${IMAGE_USER}/bench/env/lib/$PYTHON_VENV_VERSION/site-packages/bench/cli.py"
 sed -i "/import sys/a $INSERT_LINE" "apps/frappe/frappe/commands/scheduler.py"
 
 # Install required models (like nlp models)
@@ -66,10 +66,10 @@ fi
 
 # Final changes as check if previous commands didnt fail so far:
 # app name manipulation
-sed -i "s/IQ Flow/${IQ_BRAND_NAME:-IQ Flow}/g" /home/iqa/bench/apps/iq_core/iq_core/hooks.py
+sed -i "s/IQ Flow/${IQ_BRAND_NAME:-IQ Flow}/g" /home/${IMAGE_USER}/bench/apps/iq_core/iq_core/hooks.py
 
 # also change brand in workspace json
 sed -i "s/IQ Flow/${IQ_BRAND_NAME:-IQ Flow}/g" apps/iq_core/iq_core/iq_core/workspace/iq_flow/iq_flow.json
 
 # final splash screen manipulation
-sed -i "s/__(\"Starting Frappe ...\")/__(\"Starting ${IQ_BRAND_NAME:-IQ Flow} ...\")/" /home/iqa/bench/apps/frappe/frappe/desk/page/setup_wizard/setup_wizard.js
+sed -i "s/__(\"Starting Frappe ...\")/__(\"Starting ${IQ_BRAND_NAME:-IQ Flow} ...\")/" /home/${IMAGE_USER}/bench/apps/frappe/frappe/desk/page/setup_wizard/setup_wizard.js

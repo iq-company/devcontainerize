@@ -7,8 +7,8 @@ set -e # Exit on errors
 
 DB_SCHEMA=${DB_SCHEMA:-iq_schema}
 
-BENCH_DIR="/home/iqa/bench"
-APPS_DIR="/home/iqa/bench/apps"
+BENCH_DIR="/home/${IMAGE_USER}/bench"
+APPS_DIR="/home/${IMAGE_USER}/bench/apps"
 
 echo "Waiting for database to start..."
 
@@ -29,7 +29,7 @@ export FRAPPE_STREAM_LOGGING=true
 export NEWLY_LINKED_APPS
 
 # Ensure all apps have .pth files in site-packages
-/home/iqa/bench/bin-dev/check_and_setup_pth_files.sh
+/home/${IMAGE_USER}/bench/bin-dev/check_and_setup_pth_files.sh
 
 # Check if node_modules needs to be initialized for locally mounted apps
 while IFS= read -r app_dir; do
@@ -157,7 +157,7 @@ if [ -n "$APP" ] && [ "$APP" != "frappe" ] && [ "$APP" != "iq_core" ]; then
 	bench --site $IQ_SITE_NAME install-app "$APP"
 else
 	# otherwise all apps are part of the image (available in apps.txt, each line one app), also install them
-	apps=$(cat /home/{{ cookiecutter.image_user }}/bench/sites/apps.txt)
+	apps=$(cat /home/${IMAGE_USER}/bench/sites/apps.txt)
 	for app in $apps; do
 		if [ "$app" != "frappe" ] && [ "$app" != "{{ cookiecutter.app_name }}" ]; then
 			bench --site $IQ_SITE_NAME install-app "$app"

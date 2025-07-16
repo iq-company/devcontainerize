@@ -25,10 +25,10 @@ BUILDER_HASH := $(shell md5sum Dockerfile.builder 2>/dev/null | cut -d' ' -f1 | 
 EFFECTIVE_BUILDER_HASH := $(shell echo "$(BASE_HASH)-$(BUILDER_HASH)" | md5sum | cut -d' ' -f1 | cut -c1-8)
 
 # Lokale Image-Namen (ohne überflüssige Leerzeichen)
-BASE_IMAGE      := iq-base:$(BASE_HASH)
-BUILDER_IMAGE   := iq-builder:$(EFFECTIVE_BUILDER_HASH)
-DEV_IMAGE       := iq-dev:$(VERSION)
-RELEASE_IMAGE   := iq-release:$(VERSION)
+BASE_IMAGE      := {{ cookiecutter.image_prefix }}-base:$(BASE_HASH)
+BUILDER_IMAGE   := {{ cookiecutter.image_prefix }}-builder:$(EFFECTIVE_BUILDER_HASH)
+DEV_IMAGE       := {{ cookiecutter.image_prefix }}-dev:$(VERSION)
+RELEASE_IMAGE   := {{ cookiecutter.image_prefix }}-release:$(VERSION)
 
 ########################################################################
 # Hilfsfunktion: ensure_image_efficiently
@@ -104,7 +104,7 @@ BUILD_ARGS := --build-arg IQ_BRAND_NAME="$(IQ_BRAND_NAME)" --build-arg IQ_SITE_N
 base:
 	$(call ensure_image_efficiently,$(BASE_IMAGE),$(REPO_BASE),docker build $(BUILD_ARGS) -f Dockerfile.base -t $(BASE_IMAGE) .,$(if $(findstring $@,$(MAKECMDGOALS)),$(FORCE),0))
 	@if docker image inspect $(BASE_IMAGE) > /dev/null 2>&1; then \
-		docker tag $(BASE_IMAGE) iq-base:latest; \
+		docker tag $(BASE_IMAGE) {{ cookiecutter.image_prefix }}-base:latest; \
 		echo "Tagged $(BASE_IMAGE) as iq-base:latest"; \
 	fi
 
@@ -115,7 +115,7 @@ builder: base
 	@echo "Would execute: docker build -f Dockerfile.builder -t $(BUILDER_IMAGE) --build-arg BASE_IMAGE_SOURCE=$(FULL_BASE_IMAGE) ."
 	$(call ensure_image_efficiently,$(BUILDER_IMAGE),$(REPO_BUILDER),docker build $(BUILD_ARGS) -f Dockerfile.builder -t $(BUILDER_IMAGE) --build-arg BASE_IMAGE_SOURCE=$(FULL_BASE_IMAGE) .,$(if $(findstring $@,$(MAKECMDGOALS)),$(FORCE),0))
 	@if docker image inspect $(BUILDER_IMAGE) > /dev/null 2>&1; then \
-		docker tag $(BUILDER_IMAGE) iq-builder:latest; \
+		docker tag $(BUILDER_IMAGE) {{ cookiecutter.image_prefix }}-builder:latest; \
 		echo "Tagged $(BUILDER_IMAGE) as iq-builder:latest"; \
 	fi
 
@@ -125,7 +125,7 @@ dev: base builder
 	$(eval FULL_BASE_IMAGE := $(if $(REPO_BASE),$(REPO_BASE)/$(BASE_IMAGE),$(if $(REPO),$(REPO)/$(BASE_IMAGE),$(BASE_IMAGE))))
 	$(call ensure_image_efficiently,$(DEV_IMAGE),$(REPO_DEV),docker build $(BUILD_ARGS) -f Dockerfile.dev -t $(DEV_IMAGE) --target final --build-arg BUILDER_IMAGE_SOURCE=$(FULL_BUILDER_IMAGE) --build-arg BASE_IMAGE_SOURCE=$(FULL_BASE_IMAGE) .,$(if $(findstring $@,$(MAKECMDGOALS)),$(FORCE),0))
 	@if docker image inspect $(DEV_IMAGE) > /dev/null 2>&1; then \
-		docker tag $(DEV_IMAGE) iq-dev:latest; \
+		docker tag $(DEV_IMAGE) {{ cookiecutter.image_prefix }}-dev:latest; \
 		echo "Tagged $(DEV_IMAGE) as iq-dev:latest"; \
 	fi
 
@@ -135,7 +135,7 @@ release: base dev
 	$(eval FULL_DEV_IMAGE := $(if $(REPO_DEV),$(REPO_DEV)/$(DEV_IMAGE),$(if $(REPO),$(REPO)/$(DEV_IMAGE),$(DEV_IMAGE))))
 	$(call ensure_image_efficiently,$(RELEASE_IMAGE),$(REPO_RELEASE),docker build $(BUILD_ARGS) -f Dockerfile.release -t $(RELEASE_IMAGE) --target final --build-arg BASE_IMAGE_SOURCE=$(FULL_BASE_IMAGE) --build-arg DEV_IMAGE_SOURCE=$(FULL_DEV_IMAGE) . ,$(if $(findstring $@,$(MAKECMDGOALS)),$(FORCE),0))
 	@if docker image inspect $(RELEASE_IMAGE) > /dev/null 2>&1; then \
-		docker tag $(RELEASE_IMAGE) iq-release:latest; \
+		docker tag $(RELEASE_IMAGE) {{ cookiecutter.image_prefix }}-release:latest; \
 		echo "Tagged $(RELEASE_IMAGE) as iq-release:latest"; \
 	fi
 
@@ -164,9 +164,9 @@ release: base dev
 #   PG_SUPER_USER_PW:
 #   PG_SCHEMA: PG Schema name (default: iq_schema)
 test:
-	$(eval override IQ_SITE_NAME := $(if $(filter test_%,$(IQ_SITE_NAME)),$(IQ_SITE_NAME),test_iq_site))
+	$(eval override IQ_SITE_NAME := $(if $(filter test_%,$(IQ_SITE_NAME)),$(IQ_SITE_NAME),test_{{ cookiecutter.image_prefix }}_site))
 	$(eval override DBMS := $(if $(DBMS),$(DBMS),postgres))
-	$(eval override PG_SUPER_USER := $(if $(filter test_%,$(PG_SUPER_USER)),$(PG_SUPER_USER),test_iq_su))
+	$(eval override PG_SUPER_USER := $(if $(filter test_%,$(PG_SUPER_USER)),$(PG_SUPER_USER),test_{{ cookiecutter.image_prefix }}_su))
 	
 	@echo "Starting tests with database: $(DBMS), using site name: $(IQ_SITE_NAME)"
 	@if [ "$(DBMS)" = "postgres" ]; then \

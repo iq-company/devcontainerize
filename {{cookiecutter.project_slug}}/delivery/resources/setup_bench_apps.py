@@ -83,7 +83,7 @@ def main():
 	parser.add_argument("--frappe-branch", default="version-15", help="Frappe branch to use")
 	parser.add_argument("--frappe-path", default="https://github.com/frappe/frappe", help="Frappe repository URL")
 	parser.add_argument("--custom-apps", default="", help="Comma-separated list of custom app URLs to install")
-	parser.add_argument("--home-dir", default="/home/iqa", help="Home directory where bench will be installed")
+	parser.add_argument("--home-dir", default="/home/{{ cookiecutter.image_user }}", help="Home directory where bench will be installed")
 	parser.add_argument("--github-user", default="x-oauth-basic", help="GitHub username for authentication")
 	parser.add_argument("--github-token", default="", help="GitHub token for authentication")
 	args = parser.parse_args()
@@ -123,7 +123,7 @@ def main():
 		])
 
 		# Run Frappe patches
-		run_command(["bash", str(tmp_app_dir / "delivery" / "resources" / "frappe-patches.sh")], cwd=str("/home/iqa"))
+		run_command(["bash", str(tmp_app_dir / "delivery" / "resources" / "frappe-patches.sh")], cwd=str("/home/${IMAGE_USER}"))
 
 		# Initialize bench
 		run_command([

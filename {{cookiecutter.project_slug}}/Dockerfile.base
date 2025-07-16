@@ -9,7 +9,7 @@ FROM python:${PYTHON_VERSION}-slim-${DEBIAN_BASE}
 ARG WKHTMLTOPDF_VERSION=0.12.6.1-3
 ARG WKHTMLTOPDF_DISTRO=bookworm
 ARG NODE_VERSION=20.12.2
-ENV NVM_DIR=/home/iqa/.nvm
+ENV NVM_DIR=/home/${IMAGE_USER}/.nvm
 ENV PATH=${NVM_DIR}/versions/node/v${NODE_VERSION}/bin/:${PATH}
 
 ARG IQ_SITE_NAME=iq_site # default site name
@@ -23,9 +23,8 @@ ENV FRAPPE_STREAM_LOGGING=1
 
 
 # if this is overwritten in from docker runtime, the configured value needs to include this value as well
-ENV LD_LIBRARY_PATH="/home/iqa/bench/sites/extensions/lib"
+ENV LD_LIBRARY_PATH="/home/${IMAGE_USER}/bench/sites/extensions/lib"
 
-RUN useradd -ms /bin/bash iqa \
 	&& apt-get update \
 	&& apt-get install --no-install-recommends -y \
 	# curl \
@@ -64,8 +63,8 @@ RUN useradd -ms /bin/bash iqa \
 	&& npm install -g yarn \
 	&& nvm alias default v${NODE_VERSION} \
 	&& rm -rf ${NVM_DIR}/.cache && rm -rf ${NVM_DIR}/.git* \
-	&& echo 'export NVM_DIR="/home/iqa/.nvm"' >>/home/iqa/.bashrc \
-	&& echo '[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"  # This loads nvm' >>/home/iqa/.bashrc \
+	&& echo 'export NVM_DIR="/home/${IMAGE_USER}/.nvm"' >>/home/${IMAGE_USER}/.bashrc \
+	&& echo '[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"  # This loads nvm' >>/home/${IMAGE_USER}/.bashrc \
 	&& echo '[ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"  # This loads nvm bash_completion' >>/home/iqa/.bashrc \
 	# Install wkhtmltopdf with patched qt
 	&& if [ "$(uname -m)" = "aarch64" ]; then export ARCH=arm64; fi \
@@ -92,16 +91,16 @@ RUN useradd -ms /bin/bash iqa \
 	rm -rf /usr/local/lib/python3.*/site-packages/setuptools*; \
 	rm -rf /usr/local/lib/python3.*/site-packages/pkg_resources*; \
 	# Fixes for non-root nginx and logs to stdout
-	mkdir /opt/nginx /opt/pcre2; chown -R iqa:iqa /opt/*; \
+	mkdir /opt/nginx /opt/pcre2; chown -R ${IMAGE_USER}:${IMAGE_GROUP} /opt/*; \
 	touch /run/nginx.pid; \
-	chown -R iqa:iqa /run/nginx.pid; \
+	chown -R ${IMAGE_USER}:${IMAGE_GROUP} /run/nginx.pid; \
 	chmod g+w /run/nginx.pid
 # chown g+w iqa:iqa /etc/nginx/conf.d; \
 
-COPY --chown=iqa:iqa --chmod=0644 delivery/resources/nginx/nginx-template.conf /templates/nginx/iqa.conf.template
-COPY --chown=iqa:iqa --chmod=0755 delivery/resources/nginx/nginx-entrypoint.sh /usr/local/bin/nginx-entrypoint.sh
-COPY --chown=iqa:iqa delivery/resources/nginx/nginx.conf /templates/nginx/nginx.conf
-COPY --chown=iqa:iqa delivery/resources/gunicorn/gunicorn.conf.py /srv/gunicorn.conf.py
+COPY --chown=${IMAGE_USER}:${IMAGE_GROUP} --chmod=0644 delivery/resources/nginx/nginx-template.conf /templates/nginx/iqa.conf.template
+COPY --chown=${IMAGE_USER}:${IMAGE_GROUP} --chmod=0755 delivery/resources/nginx/nginx-entrypoint.sh /usr/local/bin/nginx-entrypoint.sh
+COPY --chown=${IMAGE_USER}:${IMAGE_GROUP} delivery/resources/nginx/nginx.conf /templates/nginx/nginx.conf
+COPY --chown=${IMAGE_USER}:${IMAGE_GROUP} delivery/resources/gunicorn/gunicorn.conf.py /srv/gunicorn.conf.py
 
 ARG IMAGE_USER={{ cookiecutter.image_user }}
 ARG IMAGE_GROUP={{ cookiecutter.image_group }}
@@ -115,9 +114,9 @@ USER $IMAGE_USER
 WORKDIR /home/$IMAGE_USER
 
 CMD [ \
-	"/home/iqa/bench/env/bin/gunicorn", \
+	"/home/${IMAGE_USER}/bench/env/bin/gunicorn", \
 	"-c", "/srv/gunicorn.conf.py", \
-	"--chdir=/home/iqa/bench/sites", \
+	"--chdir=/home/${IMAGE_USER}/bench/sites", \
 	"frappe.app:application" \
 	]
 

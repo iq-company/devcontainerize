@@ -49,7 +49,7 @@ RUN apt-get update \
     apt-get clean; \
 	pip3 install frappe-bench
 
-USER iqa
+USER ${IMAGE_USER}
 
 RUN set -x; \
 	# compile psql
@@ -85,7 +85,7 @@ RUN set -x; \
 		./configure \
 			--prefix=/opt/nginx \
 			--with-pcre=/tmp/pcre \
-    		--user=iqa \
+    		--user=${IMAGE_USER} \
     		--group=www-data \
             --add-module=./modules/headers_more \
     		--with-http_ssl_module \
