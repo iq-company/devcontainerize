@@ -4,7 +4,7 @@
 # calls with root.
 # But as the routines should be able to delete files (like system libraries) this is
 # necessary.
-from iq_core.commands.iq_commands import iq_release_dist
+from {{cookiecutter.app_name}}.commands.dist_commands import iq_release_dist
 
 iq_release_dist()
 
