@@ -19,14 +19,16 @@ if __name__ == "__main__":
 
     # current_dir = os.path.abspath(os.path.curdir)
     project_root = os.getcwd()
-    tmp_app_dir = os.path.join(project_root, "_tmp_app_name_source")
-    target_app_dir = os.path.join(project_root, "{{cookiecutter.app_name}}")
+    tmp_app_dir = project_root # _tmp_{{cookiecutter.app_name}}
+    # build abs path to the app dir
+    target_app_dir = os.path.abspath(os.path.join(project_root, "../{{cookiecutter.app_name}}"))
+
+    # verify commands directory exists
+    commands_dir = os.path.join(target_app_dir, "commands")
+    if not os.path.exists(commands_dir):
+        run_bash(f"mkdir -p {commands_dir}")
+
+    run_bash(f"mv {os.path.join(tmp_app_dir, 'commands/*')} {target_app_dir}")
+
     run_bash(f"mv {os.path.join(tmp_app_dir, '*.py')} {target_app_dir}")
-    run_bash(f"mv {os.path.join(tmp_app_dir, 'commands/*')} {os.path.join(target_app_dir, 'commands')}")
-
-
-    # dynamisch home_dir setzen, wenn nicht manuell überschrieben
-    username = "{{ cookiecutter.username }}"
-    home_dir = "/home/{{ cookiecutter.username }}"
-    os.environ["HOME_DIR"] = home_dir
-
+    # run_bash(f"rm -rf {_tmp_app_dir}")
