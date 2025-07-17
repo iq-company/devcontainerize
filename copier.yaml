@@ -1,0 +1,63 @@
+_min_copier_version: "7.0"
+_templates_suffix: .jinja
+_subdirectory: .
+
+# Read `app_name` from calling cwd path
+app_name:
+  type: str
+  default: "{{ copier_answers['_copier_conf']['project_path'] | path.basename }}"
+
+project_name:
+  type: str
+  default: "My Awesome App Name"
+  help: "Human-readable name of your project (used in README, etc.)"
+
+project_slug:
+  type: str
+  default: "{{ app_name }}"
+  help: "Slugified project name (used in docker image names and URLs)"
+
+image_prefix:
+  type: str
+  default: "{{ project_slug }}"
+  help: "Prefix for Docker image names"
+
+default_dbms:
+  type: str
+  choices:
+    - mariadb
+    - postgres
+    - sqlite
+  default: postgres
+  help: "Which DBMS should be used by default?"
+
+frappe_version:
+  type: str
+  default: "v16"
+  help: "Github Tag of Frappe to use in the images"
+
+author_name:
+  type: str
+  default: "Author Name"
+  help: "Name of the main author/maintainer"
+
+image_user:
+  type: str
+  default: "frappe"
+  help: "User name used inside the Docker image"
+
+image_group:
+  type: str
+  default: "frappe"
+  help: "Group name used inside the Docker image"
+
+site_name:
+  type: str
+  default: "{{ app_name }}.local"
+  help: "Default domain name used by the devcontainer site"
+
+tasks:
+  - python3 scripts/patch_init_py.py {{ app_name }}
+
+_exclude:
+  - scripts/

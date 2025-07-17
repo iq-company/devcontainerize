@@ -1,0 +1,13 @@
+{{# copier_skip_if_exists() #}}
+
+def get_commands():
+	# prevent circular imports
+	from .dist_commands import commands as dist_commands
+
+	all_commands = (
+		dist_commands
+	)
+
+	return all_commands
+
+commands = get_commands()

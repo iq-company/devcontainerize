@@ -1,28 +1,34 @@
 # Frappe Devcontainerize Template
 
-A `cruft`-compatible cookiecutter template for creating devcontainerized Frappe app projects.
+A `copier`-based template for creating devcontainerized Frappe app projects.
 
-## Quick Start: Creating a New Project
+## 🚀 Quick Start: Creating a New Project
 
 To create a new project from this template, follow these steps.
 
-##  **Install `cruft`**
+---
 
-    If you don't have it already, install `cruft`. It's recommended to use `pipx` to install it globally, but `pip` works too.
+## 🔧 Install `copier`
+
+    If you don't have it already, install `copier`. It's recommended to use `pipx` to install it globally, but `pip` works too:
 
     ```bash
-    pipx install cruft
+    pipx install copier
     # or
-    pip install cruft
+    pip install copier
     ```
 
 ##  **Create the project**
 
-    Run the `cruft create` command with the URL of this template. You will be prompted for values like project name, app name, etc.
+    From your desired project root directory (e.g. ~/apps/my_app), run:
 
     ```bash
-    cruft create https://github.com/iq-company/devcontainerize
+    copier copy gh:iq-company/devcontainerize .
     ```
+
+    You will be prompted for values like app_name, which is used to place files in the correct structure (e.g. `<app_name>/commands/dist_commands.py`).
+
+    💡 By default, the app name is automatically derived from the current working directory.
 
 ## Keeping the Project Updated
 
@@ -30,17 +36,17 @@ This project was generated from a template using `cruft`. To update your project
 
 1.  Make sure you have `cruft` installed:
     ```bash
-    pip install cruft
+    pip install copier
     ```
 
-2.  Commit any local changes you have made to your project. `cruft` will not proceed if you have uncommitted changes.
+2.  Commit any local changes. copier prefers a clean working tree.
 
 3.  Run the update command:
     ```bash
-    cruft update
+    copier update
     ```
 
-4.  `cruft` will create a `.rej` file for any changes that couldn't be merged automatically. You will need to resolve these conflicts manually. After resolving, you can delete the `.rej` files.
+4.  If the template has changed parts you modified locally, copier will show a diff and let you choose what to keep or overwrite.
 
 ## Features
 
@@ -50,3 +56,10 @@ This project was generated from a template using `cruft`. To update your project
 -   **Profile-Based Services:** Enable optional services like DDL mode via the `COMPOSE_PROFILES` variable in `.env`.
 -   **Flexible Release Management:** Use `make run-release ENV_FILE=path/to/your.env` to test with different configurations.
 
+## Tips
+
+- You can use `--pretend`, `--diff`, or `--force` with `copier update` for more control.
+
+- Files like commands/dist_command.py will be updated automatically, while other parts (e.g. user-written commands) remain untouched.
+
+- Initialization-only files (like __init__.py) are marked to be created once and skipped on update.

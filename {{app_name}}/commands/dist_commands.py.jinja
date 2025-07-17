@@ -399,3 +399,11 @@ def run_iq_tests(context, app=None, module=None, doctype=None, test=None, sectio
 	else:
 		print(f"\n✅ All {len(results['passed'])} tests passed successfully!")
 		sys.exit(0)
+
+commands = [
+	mkdocs_serve,
+	mkdocs_build,
+	iq_release_dist,
+	clear_assets_cache,
+	run_iq_tests
+]
