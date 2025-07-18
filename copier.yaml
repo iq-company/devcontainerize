@@ -1,4 +1,4 @@
-_min_copier_version: "7.0"
+_min_copier_version: "9.0"
 _templates_suffix: .jinja
 _subdirectory: .
 
@@ -34,7 +34,7 @@ default_dbms:
 frappe_version:
   type: str
   default: "v16"
-  help: "Github Tag of Frappe to use in the images"
+  help: "Github Tag of Frappe to use in the images (TODO)"
 
 author_name:
   type: str
