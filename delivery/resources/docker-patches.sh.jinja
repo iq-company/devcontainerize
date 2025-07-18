@@ -10,7 +10,7 @@ export PYTHON_VENV_VERSION=$(ls /home/${IMAGE_USER}/bench/env/lib/ | grep -E '^p
 
 # Final changes as check if previous commands didnt fail so far:
 # app name manipulation
-sed -i "s/{{ cookiecutter.project_name }}/${IQ_BRAND_NAME:-{{ cookiecutter.project_name }}}/g" /home/${IMAGE_USER}/bench/apps/{{ cookiecutter.app_name }}/{{ cookiecutter.app_name }}/hooks.py
+sed -i "s/{{ project_name }}/${IQ_BRAND_NAME:-{{ project_name }}}/g" /home/${IMAGE_USER}/bench/apps/{{ app_name }}/{{ app_name }}/hooks.py
 
 # final splash screen manipulation
-sed -i "s/__(\"Starting Frappe ...\")/__(\"Starting ${IQ_BRAND_NAME:-{{ cookiecutter.project_name }}} ...\")/" /home/${IMAGE_USER}/bench/apps/frappe/frappe/desk/page/setup_wizard/setup_wizard.js
+sed -i "s/__(\"Starting Frappe ...\")/__(\"Starting ${IQ_BRAND_NAME:-{{ project_name }}} ...\")/" /home/${IMAGE_USER}/bench/apps/frappe/frappe/desk/page/setup_wizard/setup_wizard.js

@@ -4,8 +4,8 @@ ARG DEV_IMAGE_SOURCE
 # Stage 1: Cleaning stage
 FROM ${DEV_IMAGE_SOURCE:-iq-dev} AS cleaner
 
-ARG IMAGE_USER={{ cookiecutter.image_user }}
-ARG IMAGE_GROUP={{ cookiecutter.image_group }}
+ARG IMAGE_USER={{ image_user }}
+ARG IMAGE_GROUP={{ image_group }}
 
 USER root
 
@@ -17,8 +17,8 @@ RUN PYTHON_PATH=/home/${IMAGE_USER}/bench/apps python apps/iq_core/delivery/reso
 # Stage 2: Final stage with only cleaned files
 FROM ${BASE_IMAGE_SOURCE:-iq-base} AS final
 
-ARG IMAGE_USER={{ cookiecutter.image_user }}
-ARG IMAGE_GROUP={{ cookiecutter.image_group }}
+ARG IMAGE_USER={{ image_user }}
+ARG IMAGE_GROUP={{ image_group }}
 
 USER root
 

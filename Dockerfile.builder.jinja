@@ -4,8 +4,8 @@
 ARG BASE_IMAGE_SOURCE
 FROM ${BASE_IMAGE_SOURCE:-iq-base}
 
-ARG IMAGE_USER={{ cookiecutter.image_user }}
-ARG IMAGE_GROUP={{ cookiecutter.image_group }}
+ARG IMAGE_USER={{ image_user }}
+ARG IMAGE_GROUP={{ image_group }}
 
 USER root
 

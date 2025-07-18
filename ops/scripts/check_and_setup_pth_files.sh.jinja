@@ -2,16 +2,16 @@
 
 set -e  # Exit on errors
 
-BENCH_DIR="/home/{{ cookiecutter.image_user }}/bench"
-APPS_DIR="/home/{{ cookiecutter.image_user }}/bench/apps"
+BENCH_DIR="/home/{{ image_user }}/bench"
+APPS_DIR="/home/{{ image_user }}/bench/apps"
 
 # Ensure all apps have .pth files in site-packages
 echo "Setting up .pth files for all apps..."
 
-ls -1 apps > /home/{{ cookiecutter.image_user }}/bench/sites/apps.txt;
+ls -1 apps > /home/{{ image_user }}/bench/sites/apps.txt;
 
 # Find the site-packages directory dynamically
-SITE_PACKAGES=$(find /home/{{ cookiecutter.image_user }}/bench/env/lib*/python*/site-packages -type d -name "site-packages" | head -n 1)
+SITE_PACKAGES=$(find /home/{{ image_user }}/bench/env/lib*/python*/site-packages -type d -name "site-packages" | head -n 1)
 
 if [ -n "$SITE_PACKAGES" ]; then
     for app_dir in "$APPS_DIR"/*; do

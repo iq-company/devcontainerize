@@ -161,7 +161,7 @@ def process_project_keybindings(content):
 def main():
     # The three possible directories (mounted in the container)
     dirs = [
-        "/home/{{ cookiecutter.image_user }}/.vscode-host"
+        "/home/{{ image_user }}/.vscode-host"
     ]
     workdir = find_first_nonempty_dir(dirs)
     if workdir is None:
@@ -182,7 +182,7 @@ def main():
         sys.exit(0)
 
     # Project keybindings from the project folder (assumed: relative path .devcontainer/.vscode/keybindings.json)
-    project_keybindings_path = os.path.join(os.getcwd(), "apps", "{{ cookiecutter.app_name }}", ".devcontainer", ".vscode", "keybindings.json")
+    project_keybindings_path = os.path.join(os.getcwd(), "apps", "{{ app_name }}", ".devcontainer", ".vscode", "keybindings.json")
     if not os.path.isfile(project_keybindings_path):
         print(f"Project keybindings file not found: {project_keybindings_path}")
         sys.exit(0)

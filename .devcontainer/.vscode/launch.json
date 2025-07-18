@@ -11,7 +11,7 @@
       "program": "${workspaceFolder}/env/bin/bench",
       "args": [
         "--site",
-        "{{ cookiecutter.site_name }}",
+        "{{ site_name }}",
         "console",
       ],
       "python": "${workspaceFolder}/env/bin/python",
@@ -96,13 +96,13 @@
       "program": "${workspaceFolder}/env/bin/bench",
       "args": [
         "--site",
-        "test_{{ cookiecutter.site_name }}",
+        "test_{{ site_name }}",
         "run-tests",
         "--app",
-        "{{ cookiecutter.app_name }}",
+        "{{ app_name }}",
         // "--doctype", "DocType Name",
         "--test", "test_case_name",
-        // "--module", "{{ cookiecutter.app_name }}.doctype_name.test_doctype_name",
+        // "--module", "{{ app_name }}.doctype_name.test_doctype_name",
         "--skip-test-records"
       ],
       "console": "integratedTerminal",

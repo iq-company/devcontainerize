@@ -21,7 +21,7 @@ docker run --rm --name "$TMP_CONTAINER" \
 	bash -c '
 	  set -e
 	  TARGET="/mnt/apps/frappe"
-	  SOURCE="/home/{{ cookiecutter.image_user }}/bench/apps/frappe"
+	  SOURCE="/home/{{ image_user }}/bench/apps/frappe"
 
 	  echo "Removing old frappe in volume (if exists)..."
 	  rm -rf "$TARGET"

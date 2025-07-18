@@ -21,9 +21,9 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 # Constants
-BENCH_DIR = "/home/{{ cookiecutter.image_user }}/bench"
+BENCH_DIR = "/home/{{ image_user }}/bench"
 APPS_DIR = f"{BENCH_DIR}/apps"
-SITE_NAME = "{{ cookiecutter.site_name }}"
+SITE_NAME = "{{ site_name }}"
 
 
 def run_command(cmd, cwd=None, interactive=False):
@@ -108,7 +108,7 @@ def create_new_app(app_name):
 	print(f"App {app_name} created.")
 
 	print(f"Installing app {app_name}")
-	run_command(["bench", "--site", "{{ cookiecutter.site_name }}", "install-app", app_name], cwd=BENCH_DIR, interactive=True)
+	run_command(["bench", "--site", "{{ site_name }}", "install-app", app_name], cwd=BENCH_DIR, interactive=True)
 
 	print("\n\n(!) Run Task (F8) -> Restart Bench !!\n\n")
 

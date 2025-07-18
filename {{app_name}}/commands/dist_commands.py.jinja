@@ -23,7 +23,7 @@ def clear_assets_cache():
 @click.option("--no-browser", is_flag=True, default=False, help="Prevents starting the browser")
 def mkdocs_serve(no_browser=False):
 	"Serve mkdocs locally"
-	target_path = os.path.join(frappe.get_app_path("{{cookiecutter.app_name}}"), "mkdocs")
+	target_path = os.path.join(frappe.get_app_path("{{app_name}}"), "mkdocs")
 
 	print("Starting mkdocs server... will be available (soon) under http://localhost:8020")
 	print("Press Ctrl+C to stop")
@@ -32,7 +32,7 @@ def mkdocs_serve(no_browser=False):
 	if not no_browser:
 		frappe.utils.execute_in_shell("open http://localhost:8020")
 
-	# copy_files(os.path.join(frappe.get_app_path("{{cookiecutter.app_name}}"), "public", "images"), os.path.join(frappe.get_app_path("{{cookiecutter.app_name}}"), "mkdocs", "docs", "img", "public_doc_assets"))
+	# copy_files(os.path.join(frappe.get_app_path("{{app_name}}"), "public", "images"), os.path.join(frappe.get_app_path("{{app_name}}"), "mkdocs", "docs", "img", "public_doc_assets"))
 
 	# Check if docker is available
 	if shutil.which("docker"):
@@ -48,13 +48,13 @@ def mkdocs_serve(no_browser=False):
 @click.command("mkdocs-build")
 def mkdocs_build():
 	"Build mkdocs documentation"
-	target_path = os.path.join(frappe.get_app_path("{{cookiecutter.app_name}}"), "mkdocs")
+	target_path = os.path.join(frappe.get_app_path("{{app_name}}"), "mkdocs")
 	preprocess_mkdocs()
 
 	print("Building mkdocs documentation in {0} ...".format(target_path))
 
 	# copy ../public/images/* to docs/img/
-	copied_files = copy_files(os.path.join(frappe.get_app_path("{{cookiecutter.app_name}}"), "public", "images"), os.path.join(frappe.get_app_path("{{cookiecutter.app_name}}"), "mkdocs", "docs", "img", "public_doc_assets"))
+	copied_files = copy_files(os.path.join(frappe.get_app_path("{{app_name}}"), "public", "images"), os.path.join(frappe.get_app_path("{{app_name}}"), "mkdocs", "docs", "img", "public_doc_assets"))
 
 	# Check if docker is available
 	if shutil.which("docker"):
@@ -80,8 +80,8 @@ def preprocess_mkdocs():
 
 	import datetime
 	year = datetime.datetime.now().year
-	brand_name = os.getenv("IQ_BRAND_NAME", "{{cookiecutter.project_name}}")
-	filename = os.path.join(frappe.get_app_path("{{cookiecutter.app_name}}"), "mkdocs", "mkdocs.yml")
+	brand_name = os.getenv("IQ_BRAND_NAME", "{{project_name}}")
+	filename = os.path.join(frappe.get_app_path("{{app_name}}"), "mkdocs", "mkdocs.yml")
 
 	with open(filename, "r", encoding="utf-8") as file:
 		lines = file.readlines()

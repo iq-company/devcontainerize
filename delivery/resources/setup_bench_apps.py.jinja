@@ -83,7 +83,7 @@ def main():
 	parser.add_argument("--frappe-branch", default="version-15", help="Frappe branch to use")
 	parser.add_argument("--frappe-path", default="https://github.com/frappe/frappe", help="Frappe repository URL")
 	parser.add_argument("--custom-apps", default="", help="Comma-separated list of custom app URLs to install")
-	parser.add_argument("--home-dir", default="/home/{{ cookiecutter.image_user }}", help="Home directory where bench will be installed")
+	parser.add_argument("--home-dir", default="/home/{{ image_user }}", help="Home directory where bench will be installed")
 	parser.add_argument("--github-user", default="x-oauth-basic", help="GitHub username for authentication")
 	parser.add_argument("--github-token", default="", help="GitHub token for authentication")
 	args = parser.parse_args()
@@ -116,9 +116,9 @@ def main():
 
 		# Clone Frappe
 		run_command([
-			"git", "clone", "--depth", "1", 
-			"--branch", args.frappe_branch, 
-			args.frappe_path, 
+			"git", "clone", "--depth", "1",
+			"--branch", args.frappe_branch,
+			args.frappe_path,
 			str(tmp_bench_apps_dir / "frappe")
 		])
 
@@ -130,7 +130,7 @@ def main():
 			"bench", "init",
 			"--clone-from", str(tmp_bench_dir),
 			"--clone-without-update",
-			"--no-procfile", 
+			"--no-procfile",
 			"--no-backups",
 			"--skip-redis-config-generation",
 			"--skip-assets",
@@ -181,8 +181,8 @@ def main():
 				if branch:
 					print(f"Installing app {app_name} from {url} (branch: {branch})")
 					run_command([
-						"bench", "get-app", url, 
-						"--branch", branch, 
+						"bench", "get-app", url,
+						"--branch", branch,
 						"--skip-assets"
 					], cwd=str(bench_dir))
 				else:

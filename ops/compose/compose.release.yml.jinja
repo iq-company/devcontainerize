@@ -2,10 +2,10 @@
 
 x-backend-defaults: &backend_defaults
   <<: *ddl_override
-  image: ${{ '{' }}{{ cookiecutter.image_prefix }}-release:-latest}
+  image: ${{ '{' }}{{ image_prefix }}-release:-latest}
   platform: linux/amd64
   volumes:
-    - sites:/home/{{ cookiecutter.image_user }}/bench/sites
+    - sites:/home/{{ image_user }}/bench/sites
   env_file:
     - ./.env
   depends_on:
@@ -32,7 +32,7 @@ services:
 
   websocket:
     <<: *backend_defaults
-    command: node /home/{{ cookiecutter.image_user }}/bench/apps/frappe/socketio.js
+    command: node /home/{{ image_user }}/bench/apps/frappe/socketio.js
 
   queue-short:
     <<: *backend_defaults

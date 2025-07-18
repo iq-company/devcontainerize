@@ -59,6 +59,10 @@ site_name:
 tasks:
   - python3 scripts/patch_init_py.py {{ app_name }}
 
+_skip_if_exists:
+  - "{{ app_name }}/commands/__init__.py"
+  - "ops/env/.env.template"
+
 _exclude:
   - .git/
   - .gitignore
@@ -67,4 +71,5 @@ _exclude:
   - scripts/
   - tests/
   - README.md
+  - LICENSE
   - copier.yaml

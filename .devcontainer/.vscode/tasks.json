@@ -106,7 +106,7 @@
     {
       "label": "Apps: Create a new App",
       "type": "shell",
-      "command": "source ${workspaceFolder}/apps/{{ cookiecutter.app_name }}/ops/compose/.env && ${workspaceFolder}/bin-dev/manage_app.py",
+      "command": "source ${workspaceFolder}/apps/{{ app_name }}/ops/compose/.env && ${workspaceFolder}/bin-dev/manage_app.py",
       "options": {
         "cwd": "${workspaceFolder}",
       },
@@ -119,7 +119,7 @@
     {
       "label": "Apps: Add existing App from a Repository",
       "type": "shell",
-      "command": "source ${workspaceFolder}/apps/{{ cookiecutter.app_name }}/ops/compose/.env && ${workspaceFolder}/bin-dev/manage_app.py",
+      "command": "source ${workspaceFolder}/apps/{{ app_name }}/ops/compose/.env && ${workspaceFolder}/bin-dev/manage_app.py",
       "args": [
 		"link",
         "${input:appUrl}"
@@ -160,7 +160,7 @@
     {
       "label": "Show Info",
       "type": "shell",
-      "command": "source ${workspaceFolder}/apps/{{ cookiecutter.app_name }}/ops/compose/.env && wait-for-it localhost:8000 && ${workspaceFolder}/bin-dev/info_bench_start.sh",
+      "command": "source ${workspaceFolder}/apps/{{ app_name }}/ops/compose/.env && wait-for-it localhost:8000 && ${workspaceFolder}/bin-dev/info_bench_start.sh",
       "problemMatcher": [],
       "presentation": {
         "reveal": "always",

@@ -2,8 +2,8 @@
 ARG BUILDER_IMAGE_SOURCE
 ARG BASE_IMAGE_SOURCE
 
-ARG IMAGE_USER={{ cookiecutter.image_user }}
-ARG IMAGE_GROUP={{ cookiecutter.image_group }}
+ARG IMAGE_USER={{ image_user }}
+ARG IMAGE_GROUP={{ image_group }}
 
 FROM ${BUILDER_IMAGE_SOURCE:-iq-builder} AS builder
 FROM ${BASE_IMAGE_SOURCE:-iq-base} AS dev-base
@@ -42,14 +42,14 @@ RUN apt-get update && apt-get -y install git \
 
 USER ${IMAGE_USER}
 
-COPY --chown={{ cookiecutter.image_user }}:{{ cookiecutter.image_group }} ./{{ cookiecutter.app_name }} /home/frappe/frappe-bench/apps/{{ cookiecutter.app_name }}
+COPY --chown={{ image_user }}:{{ image_group }} ./{{ app_name }} /home/frappe/frappe-bench/apps/{{ app_name }}
 
 RUN set -x; \
 	python3 /opt/apps/iq_core/delivery/resources/setup_bench_apps.py \
 	--frappe-branch ${FRAPPE_BRANCH} \
 	--frappe-path ${FRAPPE_PATH} \
 	--custom-apps "${CUSTOM_APPS}" \
-	--home-dir /home/{{ cookiecutter.image_user }} \
+	--home-dir /home/{{ image_user }} \
 	--github-user ${GITHUB_USER} \
 	--github-token "${GITHUB_TOKEN}";
 
@@ -62,8 +62,8 @@ COPY --chmod=0755 delivery/resources/docker-patches.sh /home/${IMAGE_USER}/docke
 
 RUN set -x; \n	bash /home/${IMAGE_USER}/docker-patches.sh; \n
 	chown -R ${IMAGE_USER}:${IMAGE_GROUP} /home/${IMAGE_USER}/bench/sites/; \
-	chmod -R g+rw /home/{{ cookiecutter.image_user }}/bench/sites/; \
-	chmod -R g+rw /home/{{ cookiecutter.image_user }}/bench/config; \
+	chmod -R g+rw /home/{{ image_user }}/bench/sites/; \
+	chmod -R g+rw /home/{{ image_user }}/bench/config; \
 	chmod -R g+rw /opt/nginx/
 
 USER ${IMAGE_USER}
@@ -105,11 +105,11 @@ RUN bench mkdocs-build
 # ##############################
 FROM dev-base AS final
 
-ARG IMAGE_USER={{ cookiecutter.image_user }}
-ARG IMAGE_GROUP={{ cookiecutter.image_group }}
+ARG IMAGE_USER={{ image_user }}
+ARG IMAGE_GROUP={{ image_group }}
 
 # Copy the built docs from the docs-builder stage
-COPY --from=docs-builder --chown=${IMAGE_USER}:${IMAGE_GROUP} /home/${IMAGE_USER}/bench/apps/{{ cookiecutter.app_name }}/{{ cookiecutter.app_name }}/mkdocs/dist /home/${IMAGE_USER}/bench/apps/{{ cookiecutter.app_name }}/{{ cookiecutter.app_name }}/mkdocs/dist
+COPY --from=docs-builder --chown=${IMAGE_USER}:${IMAGE_GROUP} /home/${IMAGE_USER}/bench/apps/{{ app_name }}/{{ app_name }}/mkdocs/dist /home/${IMAGE_USER}/bench/apps/{{ app_name }}/{{ app_name }}/mkdocs/dist
 
 USER ${IMAGE_USER}
 WORKDIR /home/${IMAGE_USER}/bench

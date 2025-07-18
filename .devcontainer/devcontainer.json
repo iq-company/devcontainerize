@@ -1,6 +1,6 @@
 {
 	"name": "IQ Dev",
-	"remoteUser": "{{ cookiecutter.image_user }}",
+	"remoteUser": "{{ image_user }}",
 	"customizations": {
 		"vscode": {
 			"extensions": [
@@ -38,17 +38,17 @@
 		"./compose.dev.override.yml",
 	],
 	"service": "app",
-	"workspaceFolder": "/home/{{ cookiecutter.image_user }}/bench",
+	"workspaceFolder": "/home/{{ image_user }}/bench",
 	"initializeCommand": "bash -c \"${localWorkspaceFolder}/ops/scripts/init_env_files postgres\"",
-	"postStartCommand": "bash -c \"python /home/{{ cookiecutter.image_user }}/bench/bin-dev/install_iq_keybindings.py && wait-for-it localhost:8000 && /home/{{ cookiecutter.image_user }}/bench/bin-dev/info_bench_start.sh\"",
+	"postStartCommand": "bash -c \"python /home/{{ image_user }}/bench/bin-dev/install_iq_keybindings.py && wait-for-it localhost:8000 && /home/{{ image_user }}/bench/bin-dev/info_bench_start.sh\"",
 	"shutdownAction": "stopCompose", // stop containers on vscode window close
 	"mounts": [
-		"source=${localEnv:HOME}${localEnv:USERPROFILE}/.ssh,target=/home/{{ cookiecutter.image_user }}/.ssh,type=bind,consistency=delegated",
-		"source=${localWorkspaceFolder}/.devcontainer,target=/home/{{ cookiecutter.image_user }}/bench/.devcontainer,type=bind,consistency=delegated",
-		"source=${localWorkspaceFolder}/.devcontainer/.vscode,target=/home/{{ cookiecutter.image_user }}/bench/.vscode,type=bind,consistency=delegated",
-		"source=${localWorkspaceFolder}/.devcontainer/honcho/Procfile,target=/home/{{ cookiecutter.image_user }}/bench/Procfile,type=bind,consistency=delegated",
-		"source=${localWorkspaceFolder}/.devcontainer/honcho/Procfile_skip_web,target=/home/{{ cookiecutter.image_user }}/bench/Procfile_skip_web,type=bind,consistency=delegated",
-		"source=${localWorkspaceFolder}/.devcontainer/honcho/Procfile_skip_worker,target=/home/{{ cookiecutter.image_user }}/bench/Procfile_skip_worker,type=bind,consistency=delegated",
-		"source=${localWorkspaceFolder},target=/home/{{ cookiecutter.image_user }}/bench/apps/{{ cookiecutter.app_name }},type=bind,consistency=delegated"
+		"source=${localEnv:HOME}${localEnv:USERPROFILE}/.ssh,target=/home/{{ image_user }}/.ssh,type=bind,consistency=delegated",
+		"source=${localWorkspaceFolder}/.devcontainer,target=/home/{{ image_user }}/bench/.devcontainer,type=bind,consistency=delegated",
+		"source=${localWorkspaceFolder}/.devcontainer/.vscode,target=/home/{{ image_user }}/bench/.vscode,type=bind,consistency=delegated",
+		"source=${localWorkspaceFolder}/.devcontainer/honcho/Procfile,target=/home/{{ image_user }}/bench/Procfile,type=bind,consistency=delegated",
+		"source=${localWorkspaceFolder}/.devcontainer/honcho/Procfile_skip_web,target=/home/{{ image_user }}/bench/Procfile_skip_web,type=bind,consistency=delegated",
+		"source=${localWorkspaceFolder}/.devcontainer/honcho/Procfile_skip_worker,target=/home/{{ image_user }}/bench/Procfile_skip_worker,type=bind,consistency=delegated",
+		"source=${localWorkspaceFolder},target=/home/{{ image_user }}/bench/apps/{{ app_name }},type=bind,consistency=delegated"
 	]
 }
