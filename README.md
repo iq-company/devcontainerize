@@ -23,9 +23,9 @@ To create a new project from this template, follow these steps.
     From your desired project root directory (e.g. ~/apps/my_app), run:
 
     ```bash
-    copier copy gh:iq-company/devcontainerize .
+    copier copy gh:iq-company/devcontainerize . --trust
 
-    # or with predefined values.yml: `copier copy gh:iq-company/devcontainerize . --data-file=copier-answers.yml`
+    # or with predefined values.yml: `copier copy gh:iq-company/devcontainerize . --data-file=copier-answers.yml --trust`
     ```
 
     You will be prompted for values like app_name, which is used to place files in the correct structure (e.g. `<app_name>/commands/dist_commands.py`).
@@ -34,21 +34,12 @@ To create a new project from this template, follow these steps.
 
 ## Keeping the Project Updated
 
-This project was generated from a template using `cruft`. To update your project with the latest changes from the template, follow these steps:
+This project was generated from a template using `copier`. To update your project with the latest changes from the template, follow these steps:
 
-1.  Make sure you have `cruft` installed:
-    ```bash
-    pip install copier
-    ```
-
-2.  Commit any local changes. copier prefers a clean working tree.
-
-3.  Run the update command:
-    ```bash
-    copier update
-    ```
-
-4.  If the template has changed parts you modified locally, copier will show a diff and let you choose what to keep or overwrite.
+Run the update command:
+```bash
+copier update --trust
+```
 
 ## Features
 

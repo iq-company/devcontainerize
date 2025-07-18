@@ -56,8 +56,8 @@ site_name:
   default: "{{ app_name }}.local"
   help: "Default domain name used by the devcontainer site"
 
-tasks:
-  - python3 scripts/patch_init_py.py {{ app_name }}
+_tasks:
+  - "python3 \"{{ _copier_conf.src_path }}/scripts/patch_commands_init_py.py\" {{ app_name }}"
 
 _skip_if_exists:
   - "{{ app_name }}/commands/__init__.py"

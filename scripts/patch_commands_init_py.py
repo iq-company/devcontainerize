@@ -20,15 +20,10 @@ modified = False
 
 # 1. Add import if missing
 if not import_exists:
-    for i, line in enumerate(lines):
-        if line.strip().startswith("from .") or "import" in line:
-            # Insert after last import
-            insert_pos = i + 1
-    else:
-        insert_pos = 0
-    lines.insert(insert_pos, import_line + "\n")
     modified = True
     print("[patch] Added import for dist_commands")
+
+    append_line = "\n" + import_line + "\n" + append_line  # Ensure new line before appending
 
     # 2. Append command
     for i, line in reversed(list(enumerate(lines))):
