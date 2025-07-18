@@ -60,4 +60,11 @@ tasks:
   - python3 scripts/patch_init_py.py {{ app_name }}
 
 _exclude:
+  - .git/
+  - .gitignore
+  - .gitattributes
+  - .github/
   - scripts/
+  - tests/
+  - README.md
+  - copier.yaml

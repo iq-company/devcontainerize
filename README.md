@@ -24,6 +24,8 @@ To create a new project from this template, follow these steps.
 
     ```bash
     copier copy gh:iq-company/devcontainerize .
+
+    # or with predefined values.yml: `copier copy gh:iq-company/devcontainerize . --data-file=copier-answers.yml`
     ```
 
     You will be prompted for values like app_name, which is used to place files in the correct structure (e.g. `<app_name>/commands/dist_commands.py`).
