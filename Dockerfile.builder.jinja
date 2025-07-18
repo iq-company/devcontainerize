@@ -2,7 +2,7 @@
 # DOCKER_BUILDKIT=1 docker build -t iqf-builder -f Dockerfile.builder .
 
 ARG BASE_IMAGE_SOURCE
-FROM ${BASE_IMAGE_SOURCE:-iq-base}
+FROM ${BASE_IMAGE_SOURCE:-{{ image_prefix }}-base}
 
 ARG IMAGE_USER={{ image_user }}
 ARG IMAGE_GROUP={{ image_group }}

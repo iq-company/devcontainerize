@@ -2,7 +2,7 @@ ARG BASE_IMAGE_SOURCE
 ARG DEV_IMAGE_SOURCE
 
 # Stage 1: Cleaning stage
-FROM ${DEV_IMAGE_SOURCE:-iq-dev} AS cleaner
+FROM ${DEV_IMAGE_SOURCE:-{{ image_prefix }}-dev} AS cleaner
 
 ARG IMAGE_USER={{ image_user }}
 ARG IMAGE_GROUP={{ image_group }}
@@ -15,7 +15,7 @@ WORKDIR /home/${IMAGE_USER}/bench
 RUN PYTHON_PATH=/home/${IMAGE_USER}/bench/apps python apps/iq_core/delivery/resources/call_root_iq_release_dist.py
 
 # Stage 2: Final stage with only cleaned files
-FROM ${BASE_IMAGE_SOURCE:-iq-base} AS final
+FROM ${BASE_IMAGE_SOURCE:-{{ image_prefix }}-base} AS final
 
 ARG IMAGE_USER={{ image_user }}
 ARG IMAGE_GROUP={{ image_group }}

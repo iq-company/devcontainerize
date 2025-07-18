@@ -5,8 +5,8 @@ ARG BASE_IMAGE_SOURCE
 ARG IMAGE_USER={{ image_user }}
 ARG IMAGE_GROUP={{ image_group }}
 
-FROM ${BUILDER_IMAGE_SOURCE:-iq-builder} AS builder
-FROM ${BASE_IMAGE_SOURCE:-iq-base} AS dev-base
+FROM ${BUILDER_IMAGE_SOURCE:-{{ image_prefix }}-builder} AS builder
+FROM ${BASE_IMAGE_SOURCE:-{{ image_prefix }}-base} AS dev-base
 
 ARG CUSTOM_APPS
 ARG GITHUB_USER=x-oauth-basic

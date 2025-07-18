@@ -1,6 +1,6 @@
 services:
   init:
-    image: ${CUSTOM_IMAGE:-iq-release}:${CUSTOM_TAG:-latest}
+    image: ${CUSTOM_IMAGE:-{{ image_prefix }}-release}:${CUSTOM_TAG:-latest}
     platform: linux/amd64
     env_file:
       - ./.env

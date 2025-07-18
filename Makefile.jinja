@@ -34,7 +34,7 @@ RELEASE_IMAGE   := {{ image_prefix }}-release:$(VERSION)
 # Hilfsfunktion: ensure_image_efficiently
 ########################################################################
 # Parameter:
-#   $1: Lokaler Image-Name (z.B. iq-base:<tag>)
+#   $1: Lokaler Image-Name (z.B. {{ image_prefix }}-base:<tag>)
 #   $2: Optionaler Remote-Repository-Pfad (z.B. REPO_BASE)
 #   $3: Build-Befehl (z.B. docker build -f Dockerfile.base -t $(BASE_IMAGE) .)
 #   $4: Force-Flag (0 oder 1) - wenn 1, wird der Build erzwungen
@@ -105,7 +105,7 @@ base:
 	$(call ensure_image_efficiently,$(BASE_IMAGE),$(REPO_BASE),docker build $(BUILD_ARGS) -f Dockerfile.base -t $(BASE_IMAGE) .,$(if $(findstring $@,$(MAKECMDGOALS)),$(FORCE),0))
 	@if docker image inspect $(BASE_IMAGE) > /dev/null 2>&1; then \
 		docker tag $(BASE_IMAGE) {{ image_prefix }}-base:latest; \
-		echo "Tagged $(BASE_IMAGE) as iq-base:latest"; \
+		echo "Tagged $(BASE_IMAGE) as {{ image_prefix }}-base:latest"; \
 	fi
 
 # builder: Baut bzw. prüft das Builder-Image und taggt es zusätzlich als latest.
@@ -116,7 +116,7 @@ builder: base
 	$(call ensure_image_efficiently,$(BUILDER_IMAGE),$(REPO_BUILDER),docker build $(BUILD_ARGS) -f Dockerfile.builder -t $(BUILDER_IMAGE) --build-arg BASE_IMAGE_SOURCE=$(FULL_BASE_IMAGE) .,$(if $(findstring $@,$(MAKECMDGOALS)),$(FORCE),0))
 	@if docker image inspect $(BUILDER_IMAGE) > /dev/null 2>&1; then \
 		docker tag $(BUILDER_IMAGE) {{ image_prefix }}-builder:latest; \
-		echo "Tagged $(BUILDER_IMAGE) as iq-builder:latest"; \
+		echo "Tagged $(BUILDER_IMAGE) as {{ image_prefix }}-builder:latest"; \
 	fi
 
 # dev: Baut (falls nötig) zuerst base und builder und anschließend das Dev-Image.
@@ -126,7 +126,7 @@ dev: base builder
 	$(call ensure_image_efficiently,$(DEV_IMAGE),$(REPO_DEV),docker build $(BUILD_ARGS) -f Dockerfile.dev -t $(DEV_IMAGE) --target final --build-arg BUILDER_IMAGE_SOURCE=$(FULL_BUILDER_IMAGE) --build-arg BASE_IMAGE_SOURCE=$(FULL_BASE_IMAGE) .,$(if $(findstring $@,$(MAKECMDGOALS)),$(FORCE),0))
 	@if docker image inspect $(DEV_IMAGE) > /dev/null 2>&1; then \
 		docker tag $(DEV_IMAGE) {{ image_prefix }}-dev:latest; \
-		echo "Tagged $(DEV_IMAGE) as iq-dev:latest"; \
+		echo "Tagged $(DEV_IMAGE) as {{ image_prefix }}-dev:latest"; \
 	fi
 
 # release: Baut (falls nötig) zuerst base und builder und anschließend das Release-Image.
@@ -136,7 +136,7 @@ release: base dev
 	$(call ensure_image_efficiently,$(RELEASE_IMAGE),$(REPO_RELEASE),docker build $(BUILD_ARGS) -f Dockerfile.release -t $(RELEASE_IMAGE) --target final --build-arg BASE_IMAGE_SOURCE=$(FULL_BASE_IMAGE) --build-arg DEV_IMAGE_SOURCE=$(FULL_DEV_IMAGE) . ,$(if $(findstring $@,$(MAKECMDGOALS)),$(FORCE),0))
 	@if docker image inspect $(RELEASE_IMAGE) > /dev/null 2>&1; then \
 		docker tag $(RELEASE_IMAGE) {{ image_prefix }}-release:latest; \
-		echo "Tagged $(RELEASE_IMAGE) as iq-release:latest"; \
+		echo "Tagged $(RELEASE_IMAGE) as {{ image_prefix }}-release:latest"; \
 	fi
 
 ########################################################################
