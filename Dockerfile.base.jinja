@@ -15,19 +15,23 @@ ARG NODE_VERSION=20.12.2
 ENV NVM_DIR=/home/${IMAGE_USER}/.nvm
 ENV PATH=${NVM_DIR}/versions/node/v${NODE_VERSION}/bin/:${PATH}
 
-ARG IQ_SITE_NAME={{ site_name }} # default site name
+ARG IQ_SITE_NAME="{{ site_name }}" # default site name
 ENV IQ_SITE_NAME=${IQ_SITE_NAME}
 
-ARG IQ_BRAND_NAME="IQ Flow"
+ARG IQ_BRAND_NAME="{{ project_name }}"
 ENV IQ_BRAND_NAME=${IQ_BRAND_NAME}
 
-ARG IQ_APP_NAME='iq_core'
+ARG IQ_APP_NAME='{{ app_name }}'
 ENV FRAPPE_STREAM_LOGGING=1
 
+ARG UID=1000
+ARG GID=1000
 
 # if this is overwritten in from docker runtime, the configured value needs to include this value as well
 ENV LD_LIBRARY_PATH="/home/${IMAGE_USER}/bench/sites/extensions/lib"
 
+RUN groupadd -g ${GID} ${IMAGE_GROUP} \
+	&& useradd -u ${UID} -g ${IMAGE_GROUP} -m -s /bin/bash ${IMAGE_USER} \
 	&& apt-get update \
 	&& apt-get install --no-install-recommends -y \
 	# curl \
@@ -47,8 +51,9 @@ ENV LD_LIBRARY_PATH="/home/${IMAGE_USER}/bench/sites/extensions/lib"
 	# For backups
 	# restic \
 	# gpg \
-	# MariaDB
-	# mariadb-client \
+{%- if default_dbms == 'mariadb' %}
+	mariadb-client \
+{%- endif %}
 	# less \
 	# Postgres
 	# libpq-dev \
@@ -99,21 +104,14 @@ ENV LD_LIBRARY_PATH="/home/${IMAGE_USER}/bench/sites/extensions/lib"
 	chown -R ${IMAGE_USER}:${IMAGE_GROUP} /run/nginx.pid; \
 	chmod g+w /run/nginx.pid
 
-COPY --chown=${IMAGE_USER}:${IMAGE_GROUP} --chmod=0644 delivery/resources/nginx/nginx-template.conf /templates/nginx/{{ project_name }}.conf.template
+
+COPY --chown=${IMAGE_USER}:${IMAGE_GROUP} --chmod=0644 delivery/resources/nginx/nginx-template.conf /templates/nginx/{{ app_name }}.conf.template
 COPY --chown=${IMAGE_USER}:${IMAGE_GROUP} --chmod=0755 delivery/resources/nginx/nginx-entrypoint.sh /usr/local/bin/nginx-entrypoint.sh
 COPY --chown=${IMAGE_USER}:${IMAGE_GROUP} delivery/resources/nginx/nginx.conf /templates/nginx/nginx.conf
 COPY --chown=${IMAGE_USER}:${IMAGE_GROUP} delivery/resources/gunicorn/gunicorn.conf.py /srv/gunicorn.conf.py
 
-ARG IMAGE_USER={{ image_user }}
-ARG IMAGE_GROUP={{ image_group }}
-ARG UID=1000
-ARG GID=1000
-
-RUN groupadd -g $GID $IMAGE_GROUP &&
-    useradd -u $UID -g $IMAGE_GROUP -m -s /bin/bash $IMAGE_USER
-
-USER $IMAGE_USER
-WORKDIR /home/$IMAGE_USER
+USER ${IMAGE_USER}
+WORKDIR /home/${IMAGE_USER}
 
 CMD [ \
 	"/home/${IMAGE_USER}/bench/env/bin/gunicorn", \

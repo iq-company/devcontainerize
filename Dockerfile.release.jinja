@@ -32,12 +32,14 @@ RUN rm -rf /home/${IMAGE_USER}/.nvm/versions/node/v*/lib/node_modules/npm/node_m
 	rm -rf /home/${IMAGE_USER}/.nvm/versions/node/v*/bin/npm; \
 	/usr/local/bin/pip uninstall -y pip
 
+{%- if default_dbms == 'postgres' -%}
 # Copy only the cleaned files from the cleaner stage
 COPY --from=cleaner --chown=${IMAGE_USER}:${IMAGE_GROUP} /home/${IMAGE_USER}/bench /home/${IMAGE_USER}/bench
 COPY --from=cleaner /usr/local/bin/psql /usr/local/bin/psql
 COPY --from=cleaner /lib/x86_64-linux-gnu/libpq.so* /lib/x86_64-linux-gnu/
 COPY --from=cleaner --chown=${IMAGE_USER}:${IMAGE_GROUP} /opt/nginx/ /opt/nginx/
 COPY --from=cleaner --chown=${IMAGE_USER}:${IMAGE_GROUP} /opt/pcre2/* /opt/pcre2/
+{%- endif -%}
 
 ENV PATH="/home/${IMAGE_USER}/bench/env/bin:${PATH}"
 

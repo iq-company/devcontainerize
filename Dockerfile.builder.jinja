@@ -10,53 +10,58 @@ ARG IMAGE_GROUP={{ image_group }}
 USER root
 
 RUN apt-get update \
-    && DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y \
-	git-core \
-	make \
-    # For frappe framework
-    wget \
-    #for building arm64 binaries
-    # libcairo2-dev \
-    # libpango1.0-dev \
-    libjpeg-dev \
-    libgif-dev \
-    librsvg2-dev \
-    # For psycopg2
-    libpq-dev \
-    # Other
-    libffi-dev \
-    liblcms2-dev \
-    # disabled ldap
-    # libldap2-dev
-    # libmariadb-dev \
-    # libsasl2-dev \
-    libtiff5-dev \
-    libwebp-dev \
-    redis-tools \
-	# bash tool
-    # rlwrap \
-    # tk8.6-dev \
-	# scheduling ... not sure if cron is used
-    # cron \
-    # For pandas, hiredis
-    gcc \
-    # libs for pcre2 compilation
-    libbz2-dev \
-	cmake \
-	libtool \
-	m4 \
-	automake \
-	build-essential; \
-    # clean up
-    apt-get autoremove -y; \
-    apt-get clean; \
+		&& DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y \
+		git-core \
+		make \
+		# For frappe framework
+		wget \
+		#for building arm64 binaries
+		# libcairo2-dev \
+		# libpango1.0-dev \
+		libjpeg-dev \
+		libgif-dev \
+		librsvg2-dev \
+{%- if default_dbms == 'postgres' %}
+		# For psycopg2
+		libpq-dev \
+{%- else %}
+		libssl-dev \
+{%- endif %}
+		# Other
+		libffi-dev \
+		liblcms2-dev \
+		# disabled ldap
+		# libldap2-dev
+		# libmariadb-dev \
+		# libsasl2-dev \
+		libtiff5-dev \
+		libwebp-dev \
+		redis-tools \
+		# bash tool
+		# rlwrap \
+		# tk8.6-dev \
+		# scheduling ... not sure if cron is used
+		# cron \
+		# For pandas, hiredis
+		gcc \
+		# libs for pcre2 compilation
+		libbz2-dev \
+		cmake \
+		libtool \
+		m4 \
+		automake \
+		build-essential; \
+		# clean up
+		apt-get autoremove -y; \
+		apt-get clean; \
 	pip3 install frappe-bench
 
 USER ${IMAGE_USER}
 
 RUN set -x; \
-	# compile psql
-	wget https://ftp.postgresql.org/pub/source/v16.4/postgresql-16.4.tar.gz -O /tmp/postgresql.tar.gz; \
+{%- if default_dbms == 'postgres' %}
+		# compile psql
+		wget https://ftp.postgresql.org/pub/source/v16.4/postgresql-16.4.tar.gz -O /tmp/postgresql.tar.gz; \
 		tar -xf /tmp/postgresql.tar.gz -C /tmp/; \
 		ln -s /tmp/postgresql-* /tmp/postgresql; \
 		cd /tmp/postgresql; \
@@ -64,8 +69,9 @@ RUN set -x; \
 		./configure --prefix=/tmp/psql --without-icu --without-server --with-ssl=openssl --without-readline --without-systemd --without-ldap && \
 		cd src/bin/psql; \
 		make && make install; \
-	# compile libpcre3 (as nginx dependency)
-	wget https://github.com/PCRE2Project/pcre2/archive/refs/tags/pcre2-10.44.tar.gz -O /tmp/pcre.tar.gz; \
+{%- endif %}
+		# compile libpcre3 (as nginx dependency)
+		wget https://github.com/PCRE2Project/pcre2/archive/refs/tags/pcre2-10.44.tar.gz -O /tmp/pcre.tar.gz; \
 		tar -xf /tmp/pcre.tar.gz -C /tmp/; \
 		ln -s /tmp/pcre2-* /tmp/pcre; \
 		cd /tmp/pcre; \
@@ -74,40 +80,39 @@ RUN set -x; \
 			--prefix=/opt/pcre2 \
 			--enable-static; \
 		make && make install; \
-    # compile nginx module headers_more
-    git clone https://github.com/openresty/headers-more-nginx-module.git /tmp/headers_more; \
-      cd /tmp/headers_more; \
-        .configure --prefix=/opt/nginx_headers_more; \
-        make && make install; \
-	# compile nginx
-    wget https://nginx.org/download/nginx-1.29.0.tar.gz -O /tmp/nginx.tar.gz; \
+		# compile nginx module headers_more
+		git clone https://github.com/openresty/headers-more-nginx-module.git /tmp/headers_more; \
+			cd /tmp/headers_more; \
+				./configure --prefix=/opt/nginx_headers_more; \
+				make && make install; \
+		# compile nginx
+		wget https://nginx.org/download/nginx-1.29.0.tar.gz -O /tmp/nginx.tar.gz; \
 		tar -xf /tmp/nginx.tar.gz -C /tmp/; \
 		ln -s /tmp/nginx-* /tmp/nginx; \
 		cd /tmp/nginx; \
-        git clone https://github.com/openresty/headers-more-nginx-module.git /tmp/nginx/modules/headers_more; \
+		git clone https://github.com/openresty/headers-more-nginx-module.git /tmp/nginx/modules/headers_more; \
 		./configure \
 			--prefix=/opt/nginx \
 			--with-pcre=/tmp/pcre \
-    		--user=${IMAGE_USER} \
-    		--group=www-data \
-            --add-module=./modules/headers_more \
-    		--with-http_ssl_module \
-    		--with-http_v2_module \
-    		--with-threads \
-    		--with-file-aio \
-    		--without-http_uwsgi_module \
-    		--without-http_scgi_module \
-    		--with-http_realip_module \
-    		--without-http_fastcgi_module; \
+				--user=${IMAGE_USER} \
+				--group=www-data \
+				--add-module=./modules/headers_more \
+				--with-http_ssl_module \
+				--with-http_v2_module \
+				--with-threads \
+				--with-file-aio \
+				--without-http_uwsgi_module \
+				--without-http_scgi_module \
+				--with-http_realip_module \
+				--without-http_fastcgi_module; \
 		make && make install
 
-RUN mkdir -p /opt/nginx/conf/conf.d/ \
-				/opt/nginx/conf/sites-enabled \
-		 		/opt/nginx/conf/sites-available \
-		 		/opt/nginx/conf/modules-enabled \
-		 		/opt/nginx/conf/modules-available; \
+RUN mkdir -p 	/opt/nginx/conf/conf.d/ \
+							/opt/nginx/conf/sites-enabled \
+							/opt/nginx/conf/sites-available \
+							/opt/nginx/conf/modules-enabled \
+							/opt/nginx/conf/modules-available; \
 	cp /templates/nginx/nginx.conf /opt/nginx/conf/nginx.conf; \
 	touch /opt/nginx/logs/access.log \
-			/opt/nginx/logs/error.log; \
+				/opt/nginx/logs/error.log; \
 	ln -sf /dev/stdout /opt/nginx/logs/access.log && ln -sf /dev/stderr /opt/nginx/logs/error.log;
-

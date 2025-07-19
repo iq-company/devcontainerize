@@ -2,25 +2,27 @@
 ARG BUILDER_IMAGE_SOURCE
 ARG BASE_IMAGE_SOURCE
 
-ARG IMAGE_USER={{ image_user }}
-ARG IMAGE_GROUP={{ image_group }}
-
 FROM ${BUILDER_IMAGE_SOURCE:-{{ image_prefix }}-builder} AS builder
 FROM ${BASE_IMAGE_SOURCE:-{{ image_prefix }}-base} AS dev-base
+
+ARG IMAGE_USER={{ image_user }}
+ARG IMAGE_GROUP={{ image_group }}
 
 ARG CUSTOM_APPS
 ARG GITHUB_USER=x-oauth-basic
 ARG GITHUB_TOKEN
 
-ARG FRAPPE_BRANCH=version-15
+ARG FRAPPE_REF={{ frappe_version }}
 ARG FRAPPE_PATH=https://github.com/frappe/frappe
 
 
+{%- if default_dbms == 'postgres' -%}
 # copies compiled psql and libpq.so, libpq.so.5, libpq.so.5.16 from builder stage
 COPY --from=builder /tmp/psql/bin/psql /usr/local/bin/psql
 COPY --from=builder /tmp/postgresql/src/interfaces/libpq/libpq.so* /lib/x86_64-linux-gnu/
 COPY --from=builder --chown=${IMAGE_USER}:${IMAGE_GROUP} /opt/nginx/ /opt/nginx/
 COPY --from=builder --chown=${IMAGE_USER}:${IMAGE_GROUP} /opt/pcre2/* /opt/pcre2/
+{%- endif  %}
 
 ENV PATH="/home/${IMAGE_USER}/bench/env/bin:${PATH}"
 
@@ -42,15 +44,15 @@ RUN apt-get update && apt-get -y install git \
 
 USER ${IMAGE_USER}
 
-COPY --chown={{ image_user }}:{{ image_group }} ./{{ app_name }} /home/frappe/frappe-bench/apps/{{ app_name }}
+COPY --chown={{ image_user }}:{{ image_group }} . /opt/apps/{{ app_name }}
 
 RUN set -x; \
-	python3 /opt/apps/iq_core/delivery/resources/setup_bench_apps.py \
-	--frappe-branch ${FRAPPE_BRANCH} \
+	python3 /opt/apps/{{ app_name }}/delivery/resources/setup_bench_apps.py \
+	--frappe-ref ${FRAPPE_REF} \
 	--frappe-path ${FRAPPE_PATH} \
 	--custom-apps "${CUSTOM_APPS}" \
 	--home-dir /home/{{ image_user }} \
-	--github-user ${GITHUB_USER} \
+	--github-user "${GITHUB_USER}" \
 	--github-token "${GITHUB_TOKEN}";
 
 ##
@@ -60,13 +62,15 @@ USER root
 
 COPY --chmod=0755 delivery/resources/docker-patches.sh /home/${IMAGE_USER}/docker-patches.sh
 
-RUN set -x; \n	bash /home/${IMAGE_USER}/docker-patches.sh; \n
+RUN set -x; \
+	bash /home/${IMAGE_USER}/docker-patches.sh; \
 	chown -R ${IMAGE_USER}:${IMAGE_GROUP} /home/${IMAGE_USER}/bench/sites/; \
 	chmod -R g+rw /home/{{ image_user }}/bench/sites/; \
 	chmod -R g+rw /home/{{ image_user }}/bench/config; \
 	chmod -R g+rw /opt/nginx/
 
 USER ${IMAGE_USER}
+
 # adjust several file permissions
 RUN	chown -R ${IMAGE_USER}:${IMAGE_GROUP} /run/nginx.pid ; \
 	mkdir -p /opt/nginx/client_body_temp /opt/nginx/proxy_temp; \
@@ -80,15 +84,16 @@ USER ${IMAGE_USER}
 
 # Verify changes were made
 RUN set -e; \
-	if [ ! -d '/home/${IMAGE_USER}/bench/apps/iq_core' ]; then \
-	echo 'Missing app iq_core'; \
+	if [ ! -d '/home/${IMAGE_USER}/bench/apps/{{ app_name }}' ]; then \
+	echo 'Missing app {{ app_name }}'; \
 	exit 1; \
 	fi; \
-	if ! grep -q 'Starting IQ' /home/${IMAGE_USER}/bench/apps/frappe/frappe/desk/page/setup_wizard/setup_wizard.js; then \
+	if ! grep -q 'Starting {{ project_name }}' /home/${IMAGE_USER}/bench/apps/frappe/frappe/desk/page/setup_wizard/setup_wizard.js; then \
 	echo 'docker-patches.sh might not have run completely'; \
 	exit 1; \
 	fi
 
+{% if feature_mkdocs %}
 # ##############################
 # Stage 2: Build mkdocs documentation
 # ##############################
@@ -103,13 +108,23 @@ RUN bench mkdocs-build
 # ##############################
 # Stage 3: Final image combining results
 # ##############################
+{% else %}
+# ##############################
+# Stage 2: Map dev-base to final dev stage
+# ##############################
+{% endif -%}
+
 FROM dev-base AS final
+
+{%- if feature_mkdocs %}
 
 ARG IMAGE_USER={{ image_user }}
 ARG IMAGE_GROUP={{ image_group }}
 
 # Copy the built docs from the docs-builder stage
 COPY --from=docs-builder --chown=${IMAGE_USER}:${IMAGE_GROUP} /home/${IMAGE_USER}/bench/apps/{{ app_name }}/{{ app_name }}/mkdocs/dist /home/${IMAGE_USER}/bench/apps/{{ app_name }}/{{ app_name }}/mkdocs/dist
+
+{%- endif %}
 
 USER ${IMAGE_USER}
 WORKDIR /home/${IMAGE_USER}/bench

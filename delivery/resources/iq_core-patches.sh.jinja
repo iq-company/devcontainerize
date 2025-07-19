@@ -5,11 +5,11 @@ set -e
 CWD="$(pwd)"
 
 if [ -d "apps" ] && [ -d "sites" ]; then
-    APP_TARGET_DIR="${CWD}/apps/iq_core"
-	ACTIVATED_PACKAGES_FILE="${CWD}/apps/iq_core/activated_packages"
+    APP_TARGET_DIR="${CWD}/apps/{{ app_name }}"
+	ACTIVATED_PACKAGES_FILE="${CWD}/apps/{{ app_name }}/activated_packages"
 elif [ -d "bench" ]; then
-	APP_TARGET_DIR="${CWD}/bench/apps/iq_core"
-	ACTIVATED_PACKAGES_FILE="${CWD}/bench/apps/iq_core/activated_packages"
+	APP_TARGET_DIR="${CWD}/bench/apps/{{ app_name }}"
+	ACTIVATED_PACKAGES_FILE="${CWD}/bench/apps/{{ app_name }}/activated_packages"
 else
     # Case 3: Invalid CWD, exit with error
     echo "Error: Invalid current working directory."

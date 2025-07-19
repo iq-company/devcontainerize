@@ -19,6 +19,7 @@ def clear_assets_cache():
 	frappe.cache.delete_value("assets_json", shared=True)
 
 
+{%- if feature_mkdocs %}
 @click.command("mkdocs-serve")
 @click.option("--no-browser", is_flag=True, default=False, help="Prevents starting the browser")
 def mkdocs_serve(no_browser=False):
@@ -92,6 +93,8 @@ def preprocess_mkdocs():
 				line = f'copyright: "&copy; {year} {brand_name}"\n'
 
 			file.write(line)# replace the copyright line in mkdocs.yml
+
+{% endif -%}
 
 def copy_files(src_dir, dst_dir):
 	"""Copy files from src_dir to dst_dir."""

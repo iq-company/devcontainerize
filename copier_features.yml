@@ -13,6 +13,7 @@ devcontainer:
 image_creation:
   - "Dockerfile.*"
   - "Makefile"
+mkdocs: []
 # image_ops:
 #   - "ops/compose"
 # ci_changelog:

@@ -80,7 +80,7 @@ def parse_app_url(app_url: str) -> tuple:
 
 def main():
 	parser = argparse.ArgumentParser(description="Set up bench with custom apps")
-	parser.add_argument("--frappe-branch", default="version-15", help="Frappe branch to use")
+	parser.add_argument("--frappe-ref", default="version-16", help="Git ref to use (branch or tag)")
 	parser.add_argument("--frappe-path", default="https://github.com/frappe/frappe", help="Frappe repository URL")
 	parser.add_argument("--custom-apps", default="", help="Comma-separated list of custom app URLs to install")
 	parser.add_argument("--home-dir", default="/home/{{ image_user }}", help="Home directory where bench will be installed")
@@ -100,7 +100,7 @@ def main():
 			print(f"Removing existing bench directory: {bench_dir}")
 			shutil.rmtree(str(bench_dir))
 
-		tmp_app_dir = Path("/opt/apps/iq_core")
+		tmp_app_dir = Path("/opt/apps/{{ app_name }}")
 
 		# Create temporary directories
 		tmp_bench_dir = Path("/tmp/bench")
@@ -116,14 +116,15 @@ def main():
 
 		# Clone Frappe
 		run_command([
-			"git", "clone", "--depth", "1",
-			"--branch", args.frappe_branch,
+			"git", "clone", "-b", args.frappe_ref,
+			"--single-branch",
+			"--depth", "1",
 			args.frappe_path,
 			str(tmp_bench_apps_dir / "frappe")
 		])
 
 		# Run Frappe patches
-		run_command(["bash", str(tmp_app_dir / "delivery" / "resources" / "frappe-patches.sh")], cwd=str("/home/${IMAGE_USER}"))
+		run_command(["bash", str(tmp_app_dir / "delivery" / "resources" / "frappe-patches.sh")], cwd=str("/home/{{ image_user }}"))
 
 		# Initialize bench
 		run_command([
@@ -156,7 +157,7 @@ def main():
 			f.write("frappe\n")
 
 		# Process custom apps
-		app_urls = ["/opt/apps/iq_core"]
+		app_urls = ["/opt/apps/{{ app_name }}"]
 
 		if args.custom_apps:
 			app_urls.extend(args.custom_apps.split(","))
@@ -208,13 +209,13 @@ def main():
 			with open(config_path, "w") as f:
 				json.dump(config, f)
 
-		# Run iq_core patches
-		run_command(["bash", str(bench_dir / "apps" / "iq_core" / "delivery" / "resources" / "iq_core-patches.sh")], cwd=str(home_dir))
+		# Run {{ app_name }} patches
+		run_command(["bash", str(bench_dir / "apps" / "{{ app_name }}" / "delivery" / "resources" / "iq_core-patches.sh")], cwd=str(home_dir))
 
 		# Setup requirements and build assets
 		run_command(["bench", "setup", "requirements", "--python"], cwd=str(bench_dir))
 		run_command(["bench", "setup", "requirements", "--node"], cwd=str(bench_dir))
-		run_command(["bench", "build", "--production", "--apps", "frappe,iq_core"], cwd=str(bench_dir))
+		run_command(["bench", "build", "--production", "--apps", "frappe,{{ app_name }}"], cwd=str(bench_dir))
 
 		# Handle assets directory
 		sites_assets_dir = bench_dir / "sites_assets"

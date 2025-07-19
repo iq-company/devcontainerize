@@ -33,8 +33,8 @@ default_dbms:
 
 frappe_version:
   type: str
-  default: "v16"
-  help: "Github Tag of Frappe to use in the images (TODO)"
+  default: "version-15"
+  help: "Github Branch or Tag of Frappe to use in the images - Use 'develop' for latest version (currently 16)"
 
 author_name:
   type: str
@@ -73,6 +73,12 @@ feature_image_creation:
   type: bool
   default: true
   help: "Enable image creation support?"
+
+feature_mkdocs:
+  type: bool
+  default: true
+  when: "{{ feature_image_creation is true }}"
+  help: "Enable mkdocs generation support?"
 
 # feature_image_ops:
 #   type: bool
