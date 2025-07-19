@@ -1,0 +1,7 @@
+devcontainer:
+  - ".devcontainer/"
+  - "Dockerfile.devcontainer"
+# image_ops:
+#   - "ops/compose"
+# ci_changelog:
+#   - "ops/scripts/changelog*"

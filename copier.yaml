@@ -58,10 +58,34 @@ site_name:
 
 _tasks:
   - "python3 \"{{ _copier_conf.src_path }}/scripts/patch_commands_init_py.py\" {{ app_name }}"
+  - "python3 \"{{ _copier_conf.src_path }}/scripts/update_feature_skips.py\" \"{{ _copier_conf.dst_path }}\" \"{{ _copier_conf.src_path }}/copier_features.yml\""
 
 _skip_if_exists:
   - "{{ app_name }}/commands/__init__.py"
   - "ops/env/.env.template"
+
+feature_devcontainer:
+  type: bool
+  default: true
+  help: "Enable devcontainer support?"
+
+feature_image_creation:
+  type: bool
+  default: true
+  help: "Enable image creation support?"
+
+# feature_image_ops:
+#   type: bool
+#   default: true
+#   when: "{{ feature_image_creation is true }}"
+#   help: "Enable image operations support (e.g. makefile, compose files)?"
+
+# feature_ci_gh_changelog:
+#   type: bool
+#   default: false
+#   when: "{{ feature_image_creation and feature_image_ops is true }}"
+#   help: "Enable github CI/CD changelog generation"
+
 
 _exclude:
   - .git/
@@ -73,3 +97,4 @@ _exclude:
   - README.md
   - LICENSE
   - copier.yaml
+  - copier_features.yml
