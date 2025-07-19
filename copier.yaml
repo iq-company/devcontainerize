@@ -86,13 +86,12 @@ feature_image_creation:
 #   when: "{{ feature_image_creation and feature_image_ops is true }}"
 #   help: "Enable github CI/CD changelog generation"
 
-
 _exclude:
   - .git/
   - .gitignore
   - .gitattributes
   - .github/
-  - scripts/
+  - /scripts
   - tests/
   - README.md
   - LICENSE

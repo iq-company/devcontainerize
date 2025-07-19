@@ -60,11 +60,11 @@ skip = set(answers.get("skip", []))
 for feat, globs in feature_globs.items():
     active = answers.get(f"feature_{feat}", False)
     if active:
-        continue                      # Feature bleibt erhalten
+        continue                      # keep feature
     for pattern in globs:
-        skip.add(pattern)             # künftig ganz auslassen
+        skip.add('/' + pattern)             # skip entirely in the future
         for match in project_root.glob(pattern):
-            safe_delete(match)        # nur untracked löschen
+            safe_delete(match)        # remove untracked
 
 answers["skip"] = sorted(skip)
 with answers_file.open("w") as f:
