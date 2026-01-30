@@ -5,14 +5,13 @@ ARG DEV_IMAGE_SOURCE
 FROM ${DEV_IMAGE_SOURCE:-{{ image_prefix }}-dev} AS cleaner
 
 ARG IMAGE_USER={{ image_user }}
-ARG IMAGE_GROUP={{ image_group }}
 
 USER root
 
 WORKDIR /home/${IMAGE_USER}/bench
 
 # Run app-specific cleanup tasks defined in hooks
-RUN PYTHON_PATH=/home/${IMAGE_USER}/bench/apps python apps/iq_core/delivery/resources/call_root_iq_release_dist.py
+RUN PYTHON_PATH=/home/${IMAGE_USER}/bench/apps python apps/{{ app_name }}/delivery/resources/call_root_iq_release_dist.py
 
 # Stage 2: Final stage with only cleaned files
 FROM ${BASE_IMAGE_SOURCE:-{{ image_prefix }}-base} AS final
@@ -33,13 +32,14 @@ RUN rm -rf /home/${IMAGE_USER}/.nvm/versions/node/v*/lib/node_modules/npm/node_m
 	/usr/local/bin/pip uninstall -y pip
 
 {%- if default_dbms == 'postgres' -%}
-# Copy only the cleaned files from the cleaner stage
-COPY --from=cleaner --chown=${IMAGE_USER}:${IMAGE_GROUP} /home/${IMAGE_USER}/bench /home/${IMAGE_USER}/bench
 COPY --from=cleaner /usr/local/bin/psql /usr/local/bin/psql
 COPY --from=cleaner /lib/x86_64-linux-gnu/libpq.so* /lib/x86_64-linux-gnu/
+{%- endif %}
+
+# Copy only the cleaned files from the cleaner stage
+COPY --from=cleaner --chown=${IMAGE_USER}:${IMAGE_GROUP} /home/${IMAGE_USER}/bench /home/${IMAGE_USER}/bench
 COPY --from=cleaner --chown=${IMAGE_USER}:${IMAGE_GROUP} /opt/nginx/ /opt/nginx/
 COPY --from=cleaner --chown=${IMAGE_USER}:${IMAGE_GROUP} /opt/pcre2/* /opt/pcre2/
-{%- endif -%}
 
 ENV PATH="/home/${IMAGE_USER}/bench/env/bin:${PATH}"
 

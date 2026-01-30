@@ -80,8 +80,6 @@ RUN	chown -R ${IMAGE_USER}:${IMAGE_GROUP} /run/nginx.pid ; \
 	find /home/${IMAGE_USER}/bench/sites_assets/ -type d -print0 | xargs -0 -r chmod 775 ; \
 	find /home/${IMAGE_USER}/bench/sites_assets/ -type f -print0 | xargs -0 -r chmod 644 ;
 
-USER ${IMAGE_USER}
-
 # Verify changes were made
 RUN set -e; \
 	if [ ! -d '/home/${IMAGE_USER}/bench/apps/{{ app_name }}' ]; then \

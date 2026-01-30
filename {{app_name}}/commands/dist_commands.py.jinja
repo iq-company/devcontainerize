@@ -404,8 +404,10 @@ def run_iq_tests(context, app=None, module=None, doctype=None, test=None, sectio
 		sys.exit(0)
 
 commands = [
+{%- if feature_mkdocs %}
 	mkdocs_serve,
 	mkdocs_build,
+{% endif -%}
 	iq_release_dist,
 	clear_assets_cache,
 	run_iq_tests
