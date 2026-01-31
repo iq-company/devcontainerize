@@ -6,7 +6,7 @@ x-backend-defaults: &backend_defaults
   image: "${IQ_IMAGE}:${IQ_IMAGE_TAG}"
   platform: linux/amd64
   volumes:
-    - ../scripts:/home/{{ image_user }}/bench/bin-dev
+    - ../ops/scripts/runtime:/home/{{ image_user }}/bench/bin-dev
     - sites:/home/{{ image_user }}/bench/sites
     - apps:/home/{{ image_user }}/bench/apps
     - type: bind

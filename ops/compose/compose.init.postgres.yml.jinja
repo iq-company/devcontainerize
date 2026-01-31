@@ -6,7 +6,7 @@ services:
       - ./.env
     volumes:
       - sites:/home/{{ image_user }}/bench/sites
-      - ../scripts:/home/{{ image_user }}/bench/bin-dev:ro
+      - ../scripts/runtime:/home/{{ image_user }}/bench/bin-dev:ro
     entrypoint: /home/{{ image_user }}/bench/bin-dev/init_site.sh
     depends_on:
       db:

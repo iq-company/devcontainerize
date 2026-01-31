@@ -1,20 +1,11 @@
 devcontainer:
   - ".devcontainer/"
   - "Dockerfile.devcontainer"
-  - "ops/scripts/changelog*"
-  - "ops/scripts/check_iq_keybindings*"
-  - "ops/scripts/install_iq_keybindings*"
-  - "ops/scripts/kill_running_proc*"
-  - "ops/scripts/create_app*"
-  - "ops/scripts/manage_app*"
-  - "ops/scripts/prompt_for_app*"
-  - "ops/scripts/info_bench_start*"
-  - "ops/scripts/update-core-apps-from-image-into-volume*"
+  - "ops/scripts/devcontainer/"
+  - "ops/scripts/runtime/"
 image_creation:
-  - "Dockerfile.*"
-  - "delivery/"
-  - "build-settings.yml"
-  - "Makefile"
+  - "ops/build/"
+  - "ops/scripts/release/"
 mkdocs: []
 # image_ops:
 #   - "ops/compose"

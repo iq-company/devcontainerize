@@ -19,7 +19,7 @@ iq_tests = [
 iq_release_cleanup = [
 	# {"function": "{{app_name}}.utils.release_cleanup.remove_dev_dependencies"},
 	{"bash": "find /home/{{image_user}}/bench -name '*.pyc' -delete"},
-	{"script": "../delivery/resources/container-reduce.sh"},
+	{"script": "../ops/build/resources/container-reduce.sh"},
 	{"bash": "rm -rf /home/{{image_user}}/bench/apps/{{app_name}}/delivery", "context": "only_during_build"},
 	# for now remove sqlalchemy due to cves; will be necessary later for e.g. pandas
 	{"bash": "rm -rf env/lib/python3.12/site-packages/sqlalchemy*"},

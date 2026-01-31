@@ -1,10 +1,11 @@
 def get_commands():
 	# prevent circular imports
 	from .dist_commands import commands as dist_commands
+	from .ops_commands import commands as ops_commands
 
-	all_commands = (
-		dist_commands
-	)
+	all_commands = []
+	all_commands.extend(dist_commands)
+	all_commands.extend(ops_commands)
 
 	return all_commands
 

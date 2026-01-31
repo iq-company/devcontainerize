@@ -32,7 +32,7 @@ fi
 if [ ! -f "$ENV_FILE_PATH" ]; then
 	if [ "$ENV_FILE_PATH" = "$DEFAULT_ENV_FILE" ]; then
 		echo "Default .env file not found, running init script to create it..."
-		bash ./ops/scripts/init_env_files
+		bash ./ops/scripts/devcontainer/init_env_files
 	else
 		# This case should not be reached due to the check above, but is good for safety
 		echo "Error: Release env file was specified but not found at $RELEASE_ENV_FILE"
@@ -41,7 +41,7 @@ if [ ! -f "$ENV_FILE_PATH" ]; then
 fi
 
 # Ensure init_site.sh is executable
-chmod +x ./ops/scripts/init_site.sh
+chmod +x ./ops/scripts/runtime/init_site.sh
 
 # Determine DBMS from the chosen .env file
 DBMS=$(awk -F= '/^DBMS=/ {print $2}' "$ENV_FILE_PATH" | xargs)

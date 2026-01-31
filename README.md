@@ -4,14 +4,16 @@ A `copier`-based template for creating devcontainerized Frappe app projects with
 
 ## Table of Contents
 
-- [Quick Start](#-quick-start)
-- [Features](#-features)
-- [Architecture](#-architecture)
-- [Configuration Options](#-configuration-options)
-- [Build Tools](#-build-tools)
-- [Devcontainer](#-devcontainer)
-- [Keeping Updated](#-keeping-updated)
-- [Troubleshooting](#-troubleshooting)
+- [Quick Start](#quick-start)
+- [Features](#features)
+- [Architecture](#architecture)
+- [Project Structure](#project-structure)
+- [Configuration Options](#configuration-options)
+- [CLI Commands](#cli-commands)
+- [Devcontainer](#devcontainer)
+- [Environment Files](#environment-files)
+- [Keeping Updated](#keeping-updated)
+- [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -19,20 +21,20 @@ A `copier`-based template for creating devcontainerized Frappe app projects with
 
 ### 1. Install copier
 
-    ```bash
-    pipx install copier
-    # or
-    pip install copier
-    ```
+```bash
+pipx install copier
+# or
+pip install copier
+```
 
 ### 2. Create a new project
 
-    ```bash
+```bash
 # Navigate to your app directory
 cd ~/apps/my_frappe_app
 
 # Run copier
-    copier copy gh:iq-company/devcontainerize . --trust
+copier copy gh:iq-company/devcontainerize . --trust
 
 # Or with predefined answers
 copier copy gh:iq-company/devcontainerize . --data-file=copier-answers.yml --trust
@@ -46,9 +48,9 @@ When `feature_image_creation` is enabled (default), copier automatically:
 
 You can then build Docker images:
 ```bash
-baker plan                    # Show what would be built
-baker build --targets dev     # Build dev image
-baker build --targets release # Build release image
+bench ops build plan           # Show what would be built
+bench ops build images         # Build images
+bench ops build images --push  # Build and push to registry
 ```
 
 If the automatic installation fails, run manually:
@@ -72,6 +74,7 @@ pip install -e ".[dev]"
 - **Multi-Stage Docker Builds**: Optimized for speed and size with 4 stages (base, builder, dev, release)
 - **Database Flexibility**: Support for PostgreSQL, MariaDB, and SQLite (TODO)
 - **Build Automation**: `baker-cli` for Docker builds with checksummed tags and smart caching
+- **CLI Management**: `bench ops` for template updates, version management, and releases
 - **MkDocs Integration**: Built-in documentation generation with `bench mkdocs-build`
 
 ---
@@ -116,37 +119,69 @@ Docker Build Pipeline
 | **release** | Production-ready, cleaned image | `base` | ~800MB |
 | **release-alpine** | TODO: Minimal worker image (experimental) | `python:3.12-alpine` | ~300MB |
 
-### Alpine Worker Image (Experimental)
+---
 
-The `release-alpine` image is a minimal Alpine-based image for worker-only deployments:
+## Project Structure
 
-**Advantages:**
-- ~60% smaller than the Debian-based release image (~300MB vs ~800MB)
-- Faster container startup
-- Reduced attack surface
-
-**Limitations:**
-- No wkhtmltopdf (PDF generation not supported)
-- No nginx (requires external reverse proxy)
-- Some Python packages may need recompilation
-
-**Use Cases:**
-```bash
-# Build Alpine worker image
-baker build --targets release-alpine
-
-# Scale workers with Alpine image
-docker-compose -f compose.yml up -d --scale queue-long=3
 ```
-
-**Recommended deployment pattern:**
-```
-┌─────────────────┐     ┌─────────────────┐
-│ release (full)  │     │ release-alpine  │
-│ - frontend      │     │ - queue-short   │
-│ - websocket     │     │ - queue-long    │
-│ - scheduler     │     │ - (scalable)    │
-└─────────────────┘     └─────────────────┘
+app/
+├── .devcontainer/                 # VSCode devcontainer config
+│   ├── devcontainer.json
+│   ├── compose.dev.override.yml
+│   └── honcho/
+│       ├── Procfile
+│       ├── Procfile_skip_web
+│       └── Procfile_skip_worker
+├── ops/
+│   ├── build/                     # Image creation
+│   │   ├── docker/                # Dockerfiles
+│   │   │   ├── Dockerfile.base
+│   │   │   ├── Dockerfile.builder
+│   │   │   ├── Dockerfile.dev
+│   │   │   └── Dockerfile.release
+│   │   ├── resources/             # Files copied into images
+│   │   │   ├── container-reduce.sh
+│   │   │   ├── setup_bench_apps.py
+│   │   │   ├── nginx/
+│   │   │   └── gunicorn/
+│   │   ├── build-settings.yml     # baker-cli config
+│   │   ├── .copier-answers.yml    # Copier answers
+│   │   └── VERSION                # Semantic version
+│   ├── compose/                   # Docker Compose files
+│   │   ├── compose.base.yml
+│   │   ├── compose.postgres.yml
+│   │   ├── compose.mariadb.yml
+│   │   ├── compose.release.yml
+│   │   └── .env                   # Generated (not in Git)
+│   ├── env/                       # Environment templates
+│   │   ├── .env.template
+│   │   └── .env.*.addon.template
+│   ├── scripts/
+│   │   ├── devcontainer/          # Host-side devcontainer scripts
+│   │   │   ├── init_env_files
+│   │   │   ├── init_env_files.ps1
+│   │   │   └── create_app.sh
+│   │   ├── runtime/               # Container runtime scripts
+│   │   │   ├── init_site.sh
+│   │   │   ├── check_and_setup_pth_files.sh
+│   │   │   ├── check_iq_keybindings.py
+│   │   │   ├── install_iq_keybindings.py
+│   │   │   └── info_bench_start.sh
+│   │   ├── release/               # Host-side release scripts
+│   │   │   ├── run_release_helper.sh
+│   │   │   ├── stop_release_helper.sh
+│   │   │   └── clean_release_helper.sh
+│   │   └── common/                # Common utilities
+│   │       └── manage_app.py
+│   └── copier/                    # Copier tasks (not copied to target)
+│       ├── patch_commands_init_py.py
+│       ├── patch_pyproject_toml.py
+│       └── update_feature_skips.py
+└── {{ app_name }}/
+    └── commands/
+        ├── __init__.py
+        ├── dist_commands.py       # Distribution commands
+        └── ops_commands.py        # bench ops CLI
 ```
 
 ---
@@ -169,61 +204,50 @@ docker-compose -f compose.yml up -d --scale queue-long=3
 
 ---
 
-## Build Tools
+## CLI Commands
 
-### baker-cli
+### bench ops
 
-Modern YAML-based build automation with checksummed tags and smart caching.
-
-```bash
-# Install
-pip install baker-cli
-
-# Show build plan
-baker plan
-
-# Build specific targets
-baker build --targets base builder dev
-
-# Build and push to registry
-baker build --push --targets dev release
-
-# Check what would be built (dry-run)
-baker plan --check local
-
-# Remove local images
-baker rm --targets dev release
-```
-
-**Configuration**: `build-settings.yml`
-
-Key features:
-- Checksummed tags for reproducible builds
-- Dependency tracking between stages
-- Registry existence checks (skip builds if image exists)
-- `docker buildx bake` integration
-
-### Make Utilities
-
-There is a `Makefile` to perform very common tasks Utility-Targets:
+The `bench ops` CLI provides commands for template updates, builds, and maintenance.
 
 ```bash
-# Version management
-make add-version                              # Interactive version bump
-make add-version VERSION_COMPONENT=bugfix     # Auto bugfix bump
-make add-version VERSION_COMPONENT=feature    # Auto feature bump
-make add-version VERSION_COMPONENT=major COMMIT=1  # Major bump + git commit
+# Template Management
+bench ops template update       # Update from template (copier update --trust)
+bench ops template update --dry # Preview changes (dry run)
+bench ops template status       # Show current template version
+
+# Version Management
+bench ops version show          # Show current version
+bench ops version bump          # Bump bugfix version (default)
+bench ops version bump --major  # Bump major version
+bench ops version bump --feature # Bump feature version
+bench ops version bump --commit # Bump and commit
 
 # Testing
-make test                                     # Run all tests
-make test APP=my_app                          # Run tests for specific app
-make test SECTION=MySection                   # Run tests for specific section
-make test CONTINUE=1                          # Continue on errors
+bench ops test                  # Run all tests
+bench ops test --app my_app     # Run tests for specific app
+bench ops test --section Auth   # Run tests for specific section
 
-# Release environment (local testing)
-make run-release ENV_FILE=./ops/env/.env      # Start release containers
-make stop-release                             # Stop release containers
-make clean-release                            # Remove release containers and volumes
+# Release Environment
+bench ops release run           # Start release containers
+bench ops release stop          # Stop release containers
+bench ops release clean         # Remove containers and volumes
+
+# Build Commands (wrapper for baker-cli)
+bench ops build plan            # Show build plan
+bench ops build images          # Build Docker images
+bench ops build images --push   # Build and push to registry
+```
+
+### baker-cli (Direct)
+
+For more advanced build operations:
+
+```bash
+baker plan                      # Show full build plan
+baker build --targets dev       # Build specific targets
+baker build --force             # Force rebuild
+baker rm --targets dev          # Remove local images
 ```
 
 ---
@@ -249,18 +273,51 @@ make clean-release                            # Remove release containers and vo
 | `Procfile_skip_web` | Without web server (for debugging) |
 | `Procfile_skip_worker` | Without background workers |
 
-### Environment Variables
+---
 
-Copy and configure the environment file:
+## Environment Files
+
+### Templates (committed to Git)
+
+| File | Purpose |
+|------|---------|
+| `ops/env/.env.template` | Main configuration template |
+| `ops/env/.env.*.addon.template` | DBMS-specific additions |
+
+### Generated Files (not in Git)
+
+| File | Purpose |
+|------|---------|
+| `ops/compose/.env` | Full runtime configuration |
+| `.devcontainer/.env` | Minimal config for starting devcontainer from host |
+
+### Initialization
+
 ```bash
-./ops/scripts/init_env_files postgres
+# Initialize environment for PostgreSQL
+./ops/scripts/devcontainer/init_env_files postgres
+
+# Or for MariaDB
+./ops/scripts/devcontainer/init_env_files mariadb
+
+# Or for SQLite
+./ops/scripts/devcontainer/init_env_files sqlite
+
+# Using environment variable
+DBMS=postgres ./ops/scripts/devcontainer/init_env_files
 ```
 
-Key variables in `.env`:
-- `IQ_IMAGE` / `IQ_IMAGE_TAG`: Docker image to use
-- `IQ_SITE_NAME`: Frappe site name
-- `NGINX_PORT`: Port for web access (default: 8000)
-- `DB_HOST` / `DB_PORT`: Database connection
+### Key Variables
+
+| Variable | Description |
+|----------|-------------|
+| `DBMS` | Database type (postgres, mariadb, sqlite) |
+| `DB_HOST` | Database host |
+| `DB_PORT` | Database port |
+| `DB_ROOT_PASSWORD` | Database root password |
+| `DB_SUPER_USER` | Super user for DDL operations |
+| `IQ_SITE_NAME` | Frappe site name |
+| `NGINX_PORT` | Port for web access (default: 8010) |
 
 ---
 
@@ -268,7 +325,7 @@ Key variables in `.env`:
 
 ### Template Source Storage
 
-After running `copier copy`, the template source is automatically stored in `.copier-answers.yml`:
+After running `copier copy`, the template source is automatically moved to `ops/build/.copier-answers.yml`:
 
 ```yaml
 # Auto-generated - DO NOT EDIT MANUALLY
@@ -279,34 +336,31 @@ feature_image_creation: true
 # ... all other settings
 ```
 
-This means subsequent updates only require:
-```bash
-copier update --trust
-```
+This keeps the root directory clean. The `bench ops template update` command automatically uses this location.
 
 ### Update Commands
 
 ```bash
 # Preview changes (dry-run)
-copier update --trust --pretend
-
-# Show diff
-copier update --trust --diff
+bench ops template update --dry
 
 # Apply updates
-copier update --trust
+bench ops template update
 
 # Force update (overwrite local changes)
-copier update --trust --force
+bench ops template update --force
 ```
+
+**Note**: Always use `bench ops template update` instead of calling `copier update` directly. The CLI handles:
+- Locating the answers file in `ops/build/`
+- Automatically adding `--trust`
+- Moving the updated answers file back to `ops/build/`
 
 ### Automatic Post-Update Tasks
 
 When `feature_image_creation` is enabled, copier automatically:
 1. **Patches `pyproject.toml`**: Adds `baker-cli` to dev dependencies
 2. **Installs dependencies**: Runs `pip install -e ".[dev]"`
-
-This ensures `baker-cli` is always available for building Docker images.
 
 ### Files That Won't Be Overwritten
 
@@ -335,45 +389,8 @@ newgrp docker
 bench --site SITE migrate      # Run migrations
 
 # Outside container
-baker plan                     # Show build plan
-baker build --targets dev      # Build dev image
-```
-
-
-## Project Structure
-
-```
-your_app/
-├── .devcontainer/              # VSCode devcontainer config
-│   ├── devcontainer.json
-│   ├── compose.dev.override.yml
-│   └── honcho/
-│       ├── Procfile
-│       ├── Procfile_skip_web
-│       └── Procfile_skip_worker
-├── delivery/
-│   ├── container-version       # Semantic version
-│   └── resources/
-│       ├── container-reduce.sh
-│       ├── docker-patches.sh
-│       ├── frappe-patches.sh
-│       ├── setup_bench_apps.py
-│       ├── gunicorn/
-│       └── nginx/
-├── ops/
-│   ├── compose/               # Docker Compose files
-│   ├── env/                   # Environment templates
-│   └── scripts/               # Helper scripts
-├── {{ app_name }}/
-│   └── commands/
-│       ├── __init__.py
-│       └── dist_commands.py
-├── Dockerfile.base
-├── Dockerfile.builder
-├── Dockerfile.dev
-├── Dockerfile.release
-├── build-settings.yml         # baker-cli configuration
-└── Makefile                   # Utility targets (test, version, release)
+bench ops build plan           # Show build plan
+bench ops build images         # Build images
 ```
 
 ---
