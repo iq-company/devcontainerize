@@ -11,19 +11,20 @@ $opsDir = Join-Path $scriptDir ".."
 $targetEnvFile = Join-Path $opsDir "compose/.env"
 $templateFile = Join-Path $opsDir "env/.env.template"
 
-# --- Handle DBMS selection (always run) ---
+# --- Handle DBMS selection ---
 
-# Determine DBMS choice (argument, then environment variable, then default)
+# Determine DBMS choice: argument > env DBMS > default
 $dbms = ""
 if ($args.Count -gt 0) {
     $dbms = $args[0].ToLower()
-} elseif ($env:DEVCONTAINER_DBMS) {
-    $dbms = $env:DEVCONTAINER_DBMS.ToLower()
+} elseif ($env:DBMS) {
+    $dbms = $env:DBMS.ToLower()
 } else {
     $dbms = "postgres"
 }
+Write-Host "Using DBMS: $dbms"
 
-if ($dbms -ne "postgres" -and $dbms -ne "mariadb") {
+if ($dbms -ne "postgres" -and $dbms -ne "mariadb" -and $dbms -ne "sqlite") {
     Write-Host "Warning: Invalid DBMS specified ($dbms). Defaulting to postgres."
     $dbms = "postgres"
 }
@@ -36,6 +37,9 @@ if ($dbms -eq "postgres") {
 } elseif ($dbms -eq "mariadb") {
     $dbHostVal = "mariadb"
     $dbPortVal = "3306"
+} elseif ($dbms -eq "sqlite") {
+    $dbHostVal = "localhost"
+    $dbPortVal = ""
 }
 
 # --- Create .env file if it doesn't exist ---

@@ -1,0 +1,4 @@
+# SQLite requires no external database service
+# This file is intentionally minimal - SQLite uses local file storage
+
+services: {}

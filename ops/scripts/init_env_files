@@ -12,21 +12,19 @@ OPS_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 TARGET_ENV_FILE="$OPS_DIR/compose/.env"
 TEMPLATE_FILE="$OPS_DIR/env/.env.template"
 
-# --- Handle DBMS selection (always run) ---
+# --- Handle DBMS selection ---
 
-echo "DEBUG: Parameter 1 is: '$1'"
-# Determine DBMS choice (argument, then environment variable, then default)
-DBMS=""
+# Determine DBMS choice: argument > env DBMS > default
 if [ -n "$1" ]; then
 	DBMS=$(echo "$1" | tr '[:upper:]' '[:lower:]')
-elif [ -n "$DEVCONTAINER_DBMS" ]; then
-	DBMS=$(echo "$DEVCONTAINER_DBMS" | tr '[:upper:]' '[:lower:]')
-else
+elif [ -z "$DBMS" ]; then
 	DBMS="postgres"
+else
+	DBMS=$(echo "$DBMS" | tr '[:upper:]' '[:lower:]')
 fi
-echo "DEBUG: DBMS after selection: '$DBMS'"
+echo "Using DBMS: $DBMS"
 
-if [[ "$DBMS" != "postgres" && "$DBMS" != "mariadb" ]]; then
+if [[ "$DBMS" != "postgres" && "$DBMS" != "mariadb" && "$DBMS" != "sqlite" ]]; then
 	echo "Warning: Invalid DBMS specified ($DBMS). Defaulting to postgres."
 	DBMS="postgres"
 fi
@@ -39,6 +37,9 @@ if [ "$DBMS" = "postgres" ]; then
 elif [ "$DBMS" = "mariadb" ]; then
 	DB_HOST_VAL="mariadb"
 	DB_PORT_VAL="3306"
+elif [ "$DBMS" = "sqlite" ]; then
+	DB_HOST_VAL="localhost"
+	DB_PORT_VAL=""
 fi
 
 # --- Create .env file if it doesn't exist ---

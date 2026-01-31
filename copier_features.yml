@@ -12,6 +12,8 @@ devcontainer:
   - "ops/scripts/update-core-apps-from-image-into-volume*"
 image_creation:
   - "Dockerfile.*"
+  - "delivery/"
+  - "build-settings.yml"
   - "Makefile"
 mkdocs: []
 # image_ops:

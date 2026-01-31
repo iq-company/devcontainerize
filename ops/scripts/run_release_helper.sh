@@ -48,7 +48,7 @@ DBMS=$(awk -F= '/^DBMS=/ {print $2}' "$ENV_FILE_PATH" | xargs)
 echo "Using DBMS: [$DBMS]"
 
 # Validate DBMS
-if [[ "$DBMS" != "postgres" && "$DBMS" != "mariadb" ]]; then
+if [[ "$DBMS" != "postgres" && "$DBMS" != "mariadb" && "$DBMS" != "sqlite" ]]; then
 	echo "Error: Invalid DBMS '$DBMS' detected in $ENV_FILE_PATH file."
 	exit 1
 fi
@@ -57,11 +57,18 @@ fi
 PROJECT_NAME=$(awk -F= '/^COMPOSE_PROJECT_NAME=/ {print $2}' "$ENV_FILE_PATH" | xargs)
 echo "Starting docker-compose with project name: $PROJECT_NAME..."
 
+# Build compose file list based on DBMS
+COMPOSE_FILES="-f ./ops/compose/compose.base.yml"
+if [ "$DBMS" != "sqlite" ]; then
+	COMPOSE_FILES="$COMPOSE_FILES -f ./ops/compose/compose.$DBMS.yml"
+	if [ -f "./ops/compose/compose.init.$DBMS.yml" ]; then
+		COMPOSE_FILES="$COMPOSE_FILES -f ./ops/compose/compose.init.$DBMS.yml"
+	fi
+fi
+COMPOSE_FILES="$COMPOSE_FILES -f ./ops/compose/compose.release.yml"
+
 docker compose -p "$PROJECT_NAME" \
 	$ENV_FILE_ARG \
-	-f ./ops/compose/compose.base.yml \
-	-f ./ops/compose/compose.$DBMS.yml \
-	-f ./ops/compose/compose.init.$DBMS.yml \
-	-f ./ops/compose/compose.release.yml \
+	$COMPOSE_FILES \
 	--project-directory ./ops/compose \
 	up --remove-orphans

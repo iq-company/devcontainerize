@@ -59,10 +59,12 @@ site_name:
 _tasks:
   - "python3 \"{{ _copier_conf.src_path }}/scripts/patch_commands_init_py.py\" {{ app_name }}"
   - "python3 \"{{ _copier_conf.src_path }}/scripts/update_feature_skips.py\" \"{{ _copier_conf.dst_path }}\" \"{{ _copier_conf.src_path }}/copier_features.yml\""
+  - "python3 \"{{ _copier_conf.src_path }}/scripts/patch_pyproject_toml.py\" \"{{ _copier_conf.dst_path }}\" {{ feature_image_creation }}"
 
 _skip_if_exists:
   - "{{ app_name }}/commands/__init__.py"
   - "ops/env/.env.template"
+  - "pyproject.toml"
 
 feature_devcontainer:
   type: bool
@@ -84,7 +86,7 @@ feature_mkdocs:
 #   type: bool
 #   default: true
 #   when: "{{ feature_image_creation is true }}"
-#   help: "Enable image operations support (e.g. makefile, compose files)?"
+#   help: "Enable image operations support (e.g. baker settings compose files)?"
 
 # feature_ci_gh_changelog:
 #   type: bool

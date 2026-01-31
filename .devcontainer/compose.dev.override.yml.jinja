@@ -1,14 +1,12 @@
 # This compose file extends the base compose.yml for the development environment.
 # It mounts local source code and defines the main application service for debugging.
 
-version: "3.8"
-
 x-backend-defaults: &backend_defaults
   <<: *ddl_override
-  image: "${{ '{' }}{{ image_prefix }}-dev}:${IQ_IMAGE_TAG}"
+  image: "${IQ_IMAGE}:${IQ_IMAGE_TAG}"
   platform: linux/amd64
   volumes:
-    - ../scripts:/home/{{ image_user }}/bench/bin-dev # Correct path from ops/compose to ops/scripts
+    - ../scripts:/home/{{ image_user }}/bench/bin-dev
     - sites:/home/{{ image_user }}/bench/sites
     - apps:/home/{{ image_user }}/bench/apps
     - type: bind
@@ -46,4 +44,3 @@ services:
     depends_on:
       init:
         condition: service_completed_successfully
-

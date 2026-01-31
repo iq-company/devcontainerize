@@ -1,0 +1,146 @@
+# baker-cli build configuration for {{ project_name }}
+
+# Registry/Owner with ENV fallbacks
+registry: ${env("REGISTRY","")}
+owner: ${env("OWNER", env("GITHUB_REPOSITORY_OWNER",""))}
+
+platforms: ["linux/amd64"]
+push: false
+check: auto  # auto|local|remote
+
+# Hash settings
+hash:
+  tag_length: 8
+
+# Build args that flow into all targets
+args:
+  dep_arg_prefix: "IMAGE_BAKER_"
+
+# Global build args available to all targets
+build_args:
+  IQ_BRAND_NAME: "{{ project_name }}"
+  IQ_SITE_NAME: "{{ site_name }}"
+
+# Target definitions
+# Available tag functions:
+#  - env("VAR","default")         -> Environment variable
+#  - readFile("path")             -> File content (stripped)
+#  - checksum("path1","path2")    -> sha256 of file contents
+#  - currentChecksum()            -> Hash based on hash_mode (self or self+deps)
+#  - currentChecksum8()           -> Short (8 char) version
+#  - depChecksum("targetName")    -> Hash of another target
+#  - depChecksum8("targetName")   -> Short version
+#  - gitShortSha()                -> `git rev-parse --short HEAD`
+#  - concat(a,b,...)              -> String concatenation
+
+targets:
+  base:
+    dockerfile: Dockerfile.base
+    context: .
+    deps: []
+    hash_mode: self
+    hash_files:
+      - Dockerfile.base
+      - delivery/resources/nginx/nginx-template.conf
+      - delivery/resources/nginx/nginx-entrypoint.sh
+      - delivery/resources/nginx/nginx.conf
+      - delivery/resources/gunicorn/gunicorn.conf.py
+    image: {{ image_prefix }}-base
+    latest: true
+
+  builder:
+    dockerfile: Dockerfile.builder
+    context: .
+    deps: [base]
+    hash_mode: self+deps
+    hash_files:
+      - Dockerfile.builder
+    image: {{ image_prefix }}-builder
+    latest: true
+    build_args:
+      BASE_IMAGE_SOURCE: "${depChecksum8('base')}"
+
+  dev:
+    dockerfile: Dockerfile.dev
+    context: .
+    deps: [base, builder]
+    hash_mode: self+deps
+    hash_files:
+      - Dockerfile.dev
+      - delivery/resources/setup_bench_apps.py
+      - delivery/resources/docker-patches.sh
+      - delivery/resources/frappe-patches.sh
+    image: {{ image_prefix }}-dev
+    tags:
+      - ${readFile("delivery/container-version")}
+      - latest
+    build_args:
+      BUILDER_IMAGE_SOURCE: {{ image_prefix }}-builder:${depChecksum8("builder")}
+      BASE_IMAGE_SOURCE: {{ image_prefix }}-base:${depChecksum8("base")}
+
+  release:
+    dockerfile: Dockerfile.release
+    context: .
+    deps: [base, dev]
+    hash_mode: self+deps
+    hash_files:
+      - Dockerfile.release
+      - delivery/resources/container-reduce.sh
+      - delivery/resources/call_root_iq_release_dist.py
+    image: {{ image_prefix }}-release
+    tags:
+      - ${readFile("delivery/container-version")}
+      - latest
+    build_args:
+      BASE_IMAGE_SOURCE: {{ image_prefix }}-base:${depChecksum8("base")}
+      DEV_IMAGE_SOURCE: {{ image_prefix }}-dev:${readFile("delivery/container-version")}
+
+  # Alpine-based worker image (experimental)
+  # Smaller image size but limited functionality:
+  # - No wkhtmltopdf (no PDF generation)
+  # - No nginx (use external reverse proxy)
+  # Suitable for: background workers, scheduler, CLI operations
+  release-alpine:
+    dockerfile: Dockerfile.release-alpine
+    context: .
+    deps: [dev]
+    hash_mode: self+deps
+    hash_files:
+      - Dockerfile.release-alpine
+      - delivery/resources/container-reduce.sh
+      - delivery/resources/call_root_iq_release_dist.py
+    image: {{ image_prefix }}-release-alpine
+    tags:
+      - ${readFile("delivery/container-version")}
+      - latest
+    build_args:
+      DEV_IMAGE_SOURCE: {{ image_prefix }}-dev:${readFile("delivery/container-version")}
+
+# Bundles for convenient multi-target builds
+bundles:
+  all:
+    targets:
+      - base
+      - builder
+      - dev
+      - release
+
+  ci:
+    targets:
+      - dev
+      - release
+
+  # Include Alpine worker image
+  all-with-alpine:
+    targets:
+      - base
+      - builder
+      - dev
+      - release
+      - release-alpine
+
+  # Only worker images (for scaling workers separately)
+  workers:
+    targets:
+      - release
+      - release-alpine

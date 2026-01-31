@@ -10,15 +10,20 @@ DB_SCHEMA=${DB_SCHEMA:-iq_schema}
 BENCH_DIR="/home/${IMAGE_USER}/bench"
 APPS_DIR="/home/${IMAGE_USER}/bench/apps"
 
-echo "Waiting for database to start..."
+echo "Using DBMS: $DBMS"
 
 if [ "$DBMS" == "postgres" ]; then
+    echo "Waiting for PostgreSQL to start..."
     wait-for-it $DB_HOST:$DB_PORT
     echo "POSTGRES $DB_HOST:$DB_PORT is ready"
 
 elif [ "$DBMS" == "mariadb" ]; then
+    echo "Waiting for MariaDB to start..."
     wait-for-it $DB_HOST:$DB_PORT
     echo "MARIADB $DB_HOST:$DB_PORT is ready"
+
+elif [ "$DBMS" == "sqlite" ]; then
+    echo "Using SQLite - no database server required"
 
 else
     echo "Error: Unknown DBMS specified in .env: $DBMS" >&2
@@ -143,6 +148,16 @@ EOF
 				--install-app {{ app_name }} \
 				--auto-rollback
 		fi
+
+		bench --site $IQ_SITE_NAME migrate
+
+	elif [ "$DBMS" == "sqlite" ]; then
+		echo "Creating site $IQ_SITE_NAME with SQLite..."
+		bench new-site $IQ_SITE_NAME \
+			--db-type sqlite \
+			--admin-password $IQ_ADMIN_PW \
+			--install-app {{ app_name }} \
+			--auto-rollback
 
 		bench --site $IQ_SITE_NAME migrate
 
