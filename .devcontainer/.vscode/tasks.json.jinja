@@ -16,7 +16,7 @@
     {
       "label": "Docs: Build Docs",
       "type": "shell",
-      "command": "source ${workspaceFolder}/apps/iq_core/ops/compose/.env && bench mkdocs-build",
+      "command": "source ${workspaceFolder}/apps/{{ app_name }}/ops/compose/.env && bench mkdocs-build",
       "problemMatcher": [],
       "options": {
         "cwd": "${workspaceFolder}",
@@ -34,7 +34,7 @@
     {
       "label": "Docs: Start hot-reloading Service",
       "type": "shell",
-      "command": "source ${workspaceFolder}/apps/iq_core/ops/compose/.env && bench mkdocs-serve",
+      "command": "source ${workspaceFolder}/apps/{{ app_name }}/ops/compose/.env && bench mkdocs-serve",
       "problemMatcher": [],
       "options": {
         "cwd": "${workspaceFolder}"
