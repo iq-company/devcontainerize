@@ -52,8 +52,8 @@ def ops():
 
 @ops.command("update")
 @click.option("-d", "--dry", is_flag=True, help="Dry run (preview changes without applying)")
-@click.option("-f", "--force", is_flag=True, help="Force update (overwrite local changes)")
-def update_cmd(dry: bool, force: bool):
+@click.option("-r", "--recopy", is_flag=True, help="Recopy template (ignores git status, works on dirty repos)")
+def update_cmd(dry: bool, recopy: bool):
     """Update from devcontainerize template."""
     app_root = get_app_root()
     answers_file = app_root / "ops" / "build" / ".copier-answers.yml"
@@ -62,7 +62,9 @@ def update_cmd(dry: bool, force: bool):
     if not answers_file.exists():
         answers_file = app_root / ".copier-answers.yml"
 
-    cmd = ["copier", "update", "--trust"]
+    # Use recopy for dirty repos, update for clean repos
+    copier_cmd = "recopy" if recopy else "update"
+    cmd = ["copier", copier_cmd, "--trust", "--defaults"]
 
     if answers_file.exists():
         # copier requires relative path for answers-file
@@ -72,9 +74,6 @@ def update_cmd(dry: bool, force: bool):
     if dry:
         cmd.append("--pretend")
         click.echo("🔍 Dry run - showing what would change:")
-
-    if force:
-        cmd.append("--force")
 
     click.echo(f"Running: {' '.join(cmd)}")
     result = subprocess.run(cmd, cwd=app_root)
