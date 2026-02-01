@@ -31,10 +31,26 @@ default_dbms:
   default: postgres
   help: "Which DBMS should be used by default?"
 
-frappe_version:
+frappe_branch:
   type: str
   default: "version-15"
-  help: "Github Branch or Tag of Frappe to use in the images - Use 'develop' for latest version (currently 16)"
+  help: "Frappe branch name (e.g. 'version-15', 'develop')"
+
+frappe_tag:
+  type: str
+  default: ""
+  help: "Frappe tag (optional, overrides branch if set, e.g. 'v15.47.0')"
+
+frappe_commit:
+  type: str
+  default: ""
+  help: "Frappe commit SHA (optional, overrides branch/tag if set)"
+
+# Computed: the actual git ref to use (commit > tag > branch)
+frappe_ref:
+  type: str
+  default: "{% if frappe_commit %}{{ frappe_commit }}{% elif frappe_tag %}{{ frappe_tag }}{% else %}{{ frappe_branch }}{% endif %}"
+  when: false  # Hidden, computed value
 
 author_name:
   type: str
