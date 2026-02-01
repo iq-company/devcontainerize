@@ -2,14 +2,21 @@
 Bench ops CLI - Operations commands for template updates, builds, testing, and maintenance.
 
 Usage:
-    bench ops update                 # Update from template
-    bench ops version                # Show version
-    bench ops version --bump         # Bump version
-    bench ops build                  # Show build plan
-    bench ops build --images         # Build Docker images
-    bench ops run-tests              # Run tests
-    bench ops release-dist           # Execute release cleanup
-    bench ops release run/stop/clean # Manage release environment
+    bench ops update                     # Update from template
+    bench ops version                    # Show version
+    bench ops version --bump             # Bump version
+    bench ops build                      # Show build plan
+    bench ops build --images             # Build Docker images
+    bench ops run-tests                  # Run tests
+    bench ops release-dist               # Execute release cleanup
+    bench ops stage ls                   # List all stages
+    bench ops stage show <stage>         # Show stage details
+    bench ops stage run <stage>          # Start stage environment
+    bench ops stage stop <stage>         # Stop stage environment
+    bench ops stage clean <stage>        # Clean stage environment
+    bench ops stage build <stage>        # Build images for stage
+    bench ops stage add                  # Add a new stage
+    bench ops stage rm <stage>           # Remove a stage
 """
 
 import importlib
@@ -20,9 +27,11 @@ import subprocess
 import sys
 import threading
 from pathlib import Path
+from typing import Optional
 
 import click
 import frappe
+import yaml
 from frappe.commands import pass_context
 
 
@@ -358,20 +367,34 @@ def run_tests_cmd(context, app_filter, module, doctype, test_filter, section, co
 # =============================================================================
 
 @ops.command("release-dist")
-def release_dist_cmd():
+@click.option("-s", "--stage", "stage_name", help="Filter hooks for specific stage")
+def release_dist_cmd(stage_name: Optional[str]):
     """Execute release cleanup tasks defined in ops_release_cleanup hooks."""
     all_cleanup_tasks = []
 
     linked_apps = frappe.get_all_apps(False, os.path.join(frappe.utils.get_bench_path(), "sites"))
 
-    for app_name in linked_apps:
-        all_cleanup_tasks.extend(frappe.get_hooks("ops_release_cleanup", app_name=app_name))
+    for app in linked_apps:
+        all_cleanup_tasks.extend(frappe.get_hooks("ops_release_cleanup", app_name=app))
 
     during_build = False if shutil.which("docker") else True
 
+    if stage_name:
+        click.echo(f"🎯 Filtering hooks for stage: {stage_name}")
+
     for cleanup_task in all_cleanup_tasks:
+        # Context filter (only_during_build)
         if "context" in cleanup_task and cleanup_task["context"] == "only_during_build" and not during_build:
             continue
+
+        # Stage filter - if "stages" is defined, only run for matching stages
+        task_stages = cleanup_task.get("stages")
+        if task_stages and stage_name:
+            if stage_name not in task_stages:
+                continue
+        elif task_stages and not stage_name:
+            # If task has specific stages but no stage is provided, run it (backwards compat)
+            pass
 
         if "function" in cleanup_task:
             function_path = cleanup_task["function"]
@@ -393,8 +416,8 @@ def release_dist_cmd():
                 print(f"Error executing bash command: {e}")
 
         elif "script" in cleanup_task:
-            for app_name in linked_apps:
-                script_path = os.path.join(frappe.get_app_path(app_name), cleanup_task["script"])
+            for app in linked_apps:
+                script_path = os.path.join(frappe.get_app_path(app), cleanup_task["script"])
                 if os.path.exists(script_path):
                     print(f"Executing script: {script_path}")
                     try:
@@ -408,51 +431,599 @@ def release_dist_cmd():
 
 
 # =============================================================================
-# Release Environment Commands
+# Stage Configuration Helpers
+# =============================================================================
+
+def load_stages_config() -> dict:
+    """Load and parse stages.yml configuration."""
+    app_root = get_app_root()
+    stages_file = app_root / "ops" / "build" / "stages.yml"
+
+    if not stages_file.exists():
+        click.echo(f"❌ Stages configuration not found: {stages_file}")
+        sys.exit(1)
+
+    with open(stages_file) as f:
+        return yaml.safe_load(f)
+
+
+def get_stage_config(config: dict, stage_name: str) -> dict:
+    """Get resolved stage configuration (with inheritance)."""
+    stages = config.get("stages", {})
+
+    if stage_name not in stages:
+        available = ", ".join(stages.keys()) if stages else "none"
+        click.echo(f"❌ Stage '{stage_name}' not found. Available: {available}")
+        sys.exit(1)
+
+    stage = stages[stage_name].copy()
+
+    # Resolve inheritance
+    if "extends" in stage:
+        parent_name = stage["extends"]
+        parent = get_stage_config(config, parent_name)
+        # Merge parent with child (child overrides parent)
+        merged = parent.copy()
+        del stage["extends"]
+        for key, value in stage.items():
+            if key == "apps" and "apps" in merged:
+                # For apps, merge by name
+                merged_apps = {app["name"]: app for app in merged.get("apps", [])}
+                for app in value:
+                    merged_apps[app["name"]] = app
+                merged["apps"] = list(merged_apps.values())
+            elif key == "profiles" and "profiles" in merged:
+                # For profiles, use child's value (complete override)
+                merged["profiles"] = value
+            else:
+                merged[key] = value
+        stage = merged
+
+    return stage
+
+
+def get_stage_apps(config: dict, stage_name: str) -> list:
+    """Get apps for a specific stage, with ref overrides and ignores applied."""
+    base_apps = config.get("apps", [])
+    stage = get_stage_config(config, stage_name)
+    stage_app_overrides = {app["name"]: app for app in stage.get("apps", [])}
+
+    resolved_apps = []
+    for app in base_apps:
+        override = stage_app_overrides.get(app["name"], {})
+
+        # Skip ignored apps
+        if override.get("ignore", False):
+            continue
+
+        app_copy = app.copy()
+        if override:
+            app_copy.update(override)
+        resolved_apps.append(app_copy)
+
+    return resolved_apps
+
+
+def stage_has_custom_apps(config: dict, stage_name: str) -> bool:
+    """Check if a stage has customized apps (different from base)."""
+    base_apps = config.get("apps", [])
+    stage_apps = get_stage_apps(config, stage_name)
+
+    # Different number of apps
+    if len(base_apps) != len(stage_apps):
+        return True
+
+    # Check each app
+    base_by_name = {app["name"]: app for app in base_apps}
+    for stage_app in stage_apps:
+        base_app = base_by_name.get(stage_app["name"])
+        if not base_app:
+            return True
+        # Compare refs
+        if stage_app.get("ref") != base_app.get("ref"):
+            return True
+
+    return False
+
+
+def validate_stage_config(config: dict, stage_name: str) -> list[str]:
+    """Validate stage configuration. Returns list of warnings/errors."""
+    stages = config.get("stages", {})
+    raw_stage = stages.get(stage_name, {})
+    resolved_stage = get_stage_config(config, stage_name)
+    issues = []
+
+    # Check if target is missing AND stage doesn't extend another
+    # (extending stages inherit target, so no warning needed)
+    if "target" not in raw_stage and "extends" not in raw_stage:
+        issues.append(
+            f"⚠️  Stage '{stage_name}' has no 'target' defined. "
+            "Consider adding explicit target (e.g., dev, release, release-alpine)."
+        )
+
+    has_custom = stage_has_custom_apps(config, stage_name)
+    has_suffix = bool(resolved_stage.get("image_suffix"))
+
+    if has_custom and not has_suffix:
+        issues.append(
+            f"⚠️  Stage '{stage_name}' has custom apps but no image_suffix. "
+            "A separate image build requires image_suffix to be set."
+        )
+
+    return issues
+
+
+def get_compose_files(stage: dict) -> list[str]:
+    """Get list of compose files for a stage."""
+    app_root = get_app_root()
+    compose_dir = app_root / "ops" / "compose"
+
+    files = [compose_dir / "compose.base.yml"]
+
+    # Add profile-specific compose files
+    profiles = stage.get("profiles", [])
+    if "db" in profiles:
+        dbms = os.environ.get("DBMS", "postgres")
+        db_file = compose_dir / f"compose.{dbms}.yml"
+        if db_file.exists():
+            files.append(db_file)
+
+    # Always include release compose
+    release_file = compose_dir / "compose.release.yml"
+    if release_file.exists():
+        files.append(release_file)
+
+    return [str(f) for f in files if f.exists()]
+
+
+def get_stages_that_extend(config: dict, stage_name: str) -> list[str]:
+    """Find all stages that extend the given stage."""
+    stages = config.get("stages", {})
+    extending = []
+    for name, stage in stages.items():
+        if stage.get("extends") == stage_name:
+            extending.append(name)
+    return extending
+
+
+def get_stage_image_name(config: dict, stage_name: str, image_prefix: str = "{{ image_prefix }}") -> str:
+    """Get the full image name for a stage.
+
+    Image name is derived from: {image_prefix}-{target}{suffix}
+    The target name directly maps to the image name suffix.
+    """
+    stage = get_stage_config(config, stage_name)
+    target = stage.get("target", "release")
+    suffix = stage.get("image_suffix", "")
+
+    # Image name follows pattern: {prefix}-{target}{suffix}
+    # e.g., iq-dev, iq-release, iq-release-alpine, iq-release-prod
+    return f"{image_prefix}-{target}{suffix}"
+
+
+# =============================================================================
+# Stage Commands
 # =============================================================================
 
 @ops.group()
-def release():
-    """Release environment management."""
+def stage():
+    """Stage management (environments, builds, deployments)."""
     pass
 
 
-@release.command("run")
-@click.option("-e", "--env-file", type=click.Path(exists=True), help="Path to custom .env file")
-def release_run(env_file):
-    """Start release environment."""
+@stage.command("ls")
+@click.option("-v", "--verbose", is_flag=True, help="Show more details")
+def stage_ls(verbose: bool):
+    """List all defined stages."""
+    config = load_stages_config()
+    stages = config.get("stages", {})
+
+    if not stages:
+        click.echo("No stages defined in ops/build/stages.yml")
+        return
+
+    click.echo("📦 Stages:")
+    all_issues = []
+    for name, raw_stage in stages.items():
+        resolved = get_stage_config(config, name)
+        extends = f" (extends: {raw_stage['extends']})" if "extends" in raw_stage else ""
+        target = resolved.get("target", "release")
+        click.echo(f"  • {name}{extends} → {target}")
+
+        if verbose:
+            click.echo(f"      env: {resolved.get('env_file', '.env')}")
+            profiles = resolved.get("profiles", [])
+            if profiles:
+                click.echo(f"      profiles: {', '.join(profiles)}")
+            suffix = resolved.get("image_suffix", "")
+            if suffix:
+                click.echo(f"      image_suffix: {suffix}")
+            if stage_has_custom_apps(config, name):
+                click.echo("      apps: (customized)")
+
+        # Collect validation issues
+        all_issues.extend(validate_stage_config(config, name))
+
+    if all_issues:
+        click.echo("")
+        for issue in all_issues:
+            click.echo(issue)
+
+
+@stage.command("show")
+@click.argument("stage_name")
+def stage_show(stage_name: str):
+    """Show detailed configuration for a stage."""
+    config = load_stages_config()
+    stage = get_stage_config(config, stage_name)
+    apps = get_stage_apps(config, stage_name)
+    has_custom = stage_has_custom_apps(config, stage_name)
+
+    click.echo(f"📦 Stage: {stage_name}")
+    click.echo(f"   target: {stage.get('target', 'release')}")
+    click.echo(f"   env_file: {stage.get('env_file', '.env')}")
+    click.echo(f"   profiles: {', '.join(stage.get('profiles', [])) or '(none)'}")
+
+    suffix = stage.get("image_suffix", "")
+    image_name = get_stage_image_name(config, stage_name)
+    click.echo(f"   image: {image_name}")
+    if suffix:
+        click.echo(f"   image_suffix: {suffix}")
+
+    click.echo(f"\n📱 Apps{' (customized)' if has_custom else ''}:")
+    for app in apps:
+        source = app.get("source", "unknown")
+        ref = app.get("ref", "HEAD")
+        click.echo(f"   • {app['name']}: {source} @ {ref}")
+
+    # Show validation warnings
+    issues = validate_stage_config(config, stage_name)
+    if issues:
+        click.echo("")
+        for issue in issues:
+            click.echo(issue)
+
+
+@stage.command("run")
+@click.argument("stage_name")
+@click.option("-d", "--detach", is_flag=True, default=True, help="Run in background (default)")
+@click.option("-f", "--foreground", is_flag=True, help="Run in foreground")
+def stage_run(stage_name: str, detach: bool, foreground: bool):
+    """Start environment for a stage."""
+    config = load_stages_config()
+    stage = get_stage_config(config, stage_name)
     app_root = get_app_root()
-    script = app_root / "ops" / "scripts" / "release" / "run_release_helper.sh"
+    compose_dir = app_root / "ops" / "compose"
 
-    cmd = ["bash", str(script)]
-    if env_file:
-        cmd.append(env_file)
+    # Determine env file
+    env_file = compose_dir / stage.get("env_file", ".env")
 
-    click.echo("Starting release environment...")
-    result = subprocess.run(cmd, cwd=app_root)
+    # Build compose command
+    compose_files = get_compose_files(stage)
+    cmd = ["docker", "compose"]
+
+    for f in compose_files:
+        cmd.extend(["-f", f])
+
+    if env_file.exists():
+        cmd.extend(["--env-file", str(env_file)])
+
+    # Add profiles
+    for profile in stage.get("profiles", []):
+        cmd.extend(["--profile", profile])
+
+    cmd.append("up")
+
+    if not foreground:
+        cmd.append("-d")
+
+    click.echo(f"🚀 Starting stage '{stage_name}'...")
+    click.echo(f"   Compose files: {', '.join(Path(f).name for f in compose_files)}")
+    click.echo(f"   Env file: {env_file.name if env_file.exists() else '(none)'}")
+    click.echo(f"   Profiles: {', '.join(stage.get('profiles', [])) or '(none)'}")
+    click.echo(f"\n   Running: {' '.join(cmd)}\n")
+
+    result = subprocess.run(cmd, cwd=compose_dir)
     sys.exit(result.returncode)
 
 
-@release.command("stop")
-def release_stop():
-    """Stop release environment."""
+@stage.command("stop")
+@click.argument("stage_name")
+def stage_stop(stage_name: str):
+    """Stop environment for a stage."""
+    config = load_stages_config()
+    stage = get_stage_config(config, stage_name)
     app_root = get_app_root()
-    script = app_root / "ops" / "scripts" / "release" / "stop_release_helper.sh"
+    compose_dir = app_root / "ops" / "compose"
 
-    click.echo("Stopping release environment...")
-    result = subprocess.run(["bash", str(script)], cwd=app_root)
+    compose_files = get_compose_files(stage)
+    cmd = ["docker", "compose"]
+
+    for f in compose_files:
+        cmd.extend(["-f", f])
+
+    # Add profiles (needed to stop profile-specific services)
+    for profile in stage.get("profiles", []):
+        cmd.extend(["--profile", profile])
+
+    cmd.append("stop")
+
+    click.echo(f"🛑 Stopping stage '{stage_name}'...")
+    result = subprocess.run(cmd, cwd=compose_dir)
     sys.exit(result.returncode)
 
 
-@release.command("clean")
-def release_clean():
-    """Clean up release environment (remove containers and volumes)."""
+@stage.command("clean")
+@click.argument("stage_name")
+@click.option("-v", "--volumes", is_flag=True, help="Also remove volumes")
+def stage_clean(stage_name: str, volumes: bool):
+    """Clean up environment for a stage (remove containers)."""
+    config = load_stages_config()
+    stage = get_stage_config(config, stage_name)
     app_root = get_app_root()
-    script = app_root / "ops" / "scripts" / "release" / "clean_release_helper.sh"
+    compose_dir = app_root / "ops" / "compose"
 
-    click.echo("Cleaning release environment...")
-    result = subprocess.run(["bash", str(script)], cwd=app_root)
+    compose_files = get_compose_files(stage)
+    cmd = ["docker", "compose"]
+
+    for f in compose_files:
+        cmd.extend(["-f", f])
+
+    for profile in stage.get("profiles", []):
+        cmd.extend(["--profile", profile])
+
+    cmd.append("down")
+
+    if volumes:
+        cmd.append("-v")
+
+    click.echo(f"🧹 Cleaning stage '{stage_name}'...")
+    result = subprocess.run(cmd, cwd=compose_dir)
     sys.exit(result.returncode)
+
+
+@stage.command("build")
+@click.argument("stage_name")
+@click.option("-p", "--push", is_flag=True, help="Push images after building")
+@click.option("-f", "--force", is_flag=True, help="Force rebuild")
+def stage_build(stage_name: str, push: bool, force: bool):
+    """Build Docker images for a stage."""
+    config = load_stages_config()
+    stage = get_stage_config(config, stage_name)
+    apps = get_stage_apps(config, stage_name)
+    app_root = get_app_root()
+    has_custom = stage_has_custom_apps(config, stage_name)
+
+    # Get target from stage config (defaults applied in get_stage_config)
+    target = stage.get("target", "release")
+    image_suffix = stage.get("image_suffix", "")
+    image_name = get_stage_image_name(config, stage_name)
+
+    # Validate configuration
+    issues = validate_stage_config(config, stage_name)
+    if issues:
+        for issue in issues:
+            click.echo(issue)
+        if has_custom and not image_suffix:
+            click.echo("\n❌ Cannot build: stage has custom apps but no image_suffix.")
+            click.echo("   Set image_suffix in stages.yml to create a distinct image.")
+            sys.exit(1)
+
+    click.echo(f"🔨 Building images for stage '{stage_name}'...")
+    click.echo(f"   target: {target}")
+    click.echo(f"   image: {image_name}")
+    if has_custom:
+        click.echo("   apps: (customized)")
+
+    # Extract Frappe ref and custom apps from stage definition
+    # The main app ({{ app_name }}) is copied via COPY in Dockerfile, so it's not in CUSTOM_APPS
+    # All other apps are passed via CUSTOM_APPS in format: url#ref or /local/path
+    frappe_ref = None
+    custom_apps = []
+
+    click.echo("\n📱 Apps:")
+    for app in apps:
+        source = app.get("source", "local")
+        ref = app.get("ref", "HEAD")
+        click.echo(f"     • {app['name']}: {source} @ {ref}")
+
+        if app["name"] == "frappe":
+            # Frappe is handled separately via FRAPPE_REF
+            frappe_ref = ref
+        elif app["name"] == "{{ app_name }}":
+            # Main app is copied via COPY in Dockerfile, not via CUSTOM_APPS
+            pass
+        else:
+            # All other apps go into CUSTOM_APPS
+            if source == "local":
+                # Local path (must exist in container at build time)
+                app_spec = f"/opt/apps/{app['name']}"
+            else:
+                # Remote URL with optional ref
+                app_spec = source
+                if ref and ref != "HEAD":
+                    app_spec += f"#{ref}"
+            custom_apps.append(app_spec)
+
+    # Build command using baker
+    settings = app_root / "ops" / "build" / "build-settings.yml"
+
+    if not settings.exists():
+        click.echo(f"\n❌ Build settings not found: {settings}")
+        sys.exit(1)
+
+    cmd = ["baker", "build", "--settings", str(settings)]
+    cmd.extend(["--targets", target])
+
+    if push:
+        cmd.append("--push")
+    if force:
+        cmd.append("--force")
+
+    # Build args for the Docker build
+    # These are passed as environment variables which Dockerfile ARGs pick up
+    env = os.environ.copy()
+    env["STAGE_NAME"] = stage_name
+    env["IMAGE_SUFFIX"] = image_suffix
+
+    # Production build for release targets, development for dev target
+    is_production = target != "dev"
+    env["PRODUCTION_BUILD"] = "true" if is_production else "false"
+
+    if frappe_ref:
+        env["FRAPPE_REF"] = frappe_ref
+        click.echo(f"\n   FRAPPE_REF: {frappe_ref}")
+
+    if custom_apps:
+        env["CUSTOM_APPS"] = ",".join(custom_apps)
+        click.echo(f"   CUSTOM_APPS: {env['CUSTOM_APPS']}")
+
+    click.echo(f"   PRODUCTION_BUILD: {env['PRODUCTION_BUILD']}")
+
+    click.echo(f"\n   Running: {' '.join(cmd)}\n")
+    result = subprocess.run(cmd, cwd=app_root, env=env)
+    sys.exit(result.returncode)
+
+
+@stage.command("add")
+@click.argument("stage_name")
+@click.option("-e", "--extends", "extends_stage", help="Stage to extend from")
+@click.option("-t", "--target", "target_name", help="Build target (dev, release, release-alpine, ...)")
+def stage_add(stage_name: str, extends_stage: Optional[str], target_name: Optional[str]):
+    """Add a new stage."""
+    config = load_stages_config()
+    stages = config.get("stages", {})
+
+    if stage_name in stages:
+        click.echo(f"❌ Stage '{stage_name}' already exists.")
+        sys.exit(1)
+
+    # Ask if it should extend another stage
+    if extends_stage is None:
+        existing_stages = list(stages.keys())
+        if existing_stages:
+            click.echo(f"Available stages to extend: {', '.join(existing_stages)}")
+            extends_stage = click.prompt(
+                "Extend from stage (leave empty for standalone)",
+                default="",
+                show_default=False
+            )
+            if extends_stage and extends_stage not in stages:
+                click.echo(f"❌ Stage '{extends_stage}' not found.")
+                sys.exit(1)
+
+    # Determine target - inherited from parent or must be specified
+    if extends_stage:
+        # Will inherit target from parent, no need to specify
+        pass
+    elif target_name is None:
+        # Standalone stage needs explicit target
+        target_name = click.prompt(
+            "Build target (e.g., dev, release, release-alpine)",
+            default="release"
+        )
+
+    # Create new stage configuration
+    new_stage = {
+        "env_file": f".env.{stage_name}",
+        "profiles": [],
+        "image_suffix": f"-{stage_name}"
+    }
+
+    # Add target only for standalone stages (extending stages inherit it)
+    if not extends_stage and target_name:
+        new_stage["target"] = target_name
+
+    if extends_stage:
+        new_stage = {"extends": extends_stage, **new_stage}
+
+    # Update the config file
+    app_root = get_app_root()
+    stages_file = app_root / "ops" / "build" / "stages.yml"
+
+    config["stages"][stage_name] = new_stage
+
+    with open(stages_file, "w") as f:
+        yaml.dump(config, f, default_flow_style=False, sort_keys=False)
+
+    click.echo(f"✅ Added stage '{stage_name}'")
+
+    # Create env file
+    compose_dir = app_root / "ops" / "compose"
+    env_file = compose_dir / f".env.{stage_name}"
+
+    if not env_file.exists():
+        if click.confirm(f"Create {env_file.name}?", default=True):
+            # Copy from parent or base
+            source_env = None
+            if extends_stage:
+                parent_stage = stages.get(extends_stage, {})
+                source_env = compose_dir / parent_stage.get("env_file", ".env")
+            if not source_env or not source_env.exists():
+                source_env = compose_dir / ".env"
+
+            if source_env.exists():
+                shutil.copy(source_env, env_file)
+                click.echo(f"✅ Created {env_file.name} (copied from {source_env.name})")
+            else:
+                env_file.touch()
+                click.echo(f"✅ Created empty {env_file.name}")
+
+
+@stage.command("rm")
+@click.argument("stage_name")
+@click.option("-y", "--yes", is_flag=True, help="Skip confirmation prompts")
+@click.option("-n", "--no", "no_delete_env", is_flag=True, help="Don't delete .env file")
+def stage_rm(stage_name: str, yes: bool, no_delete_env: bool):
+    """Remove a stage."""
+    config = load_stages_config()
+    stages = config.get("stages", {})
+
+    if stage_name not in stages:
+        available = ", ".join(stages.keys()) if stages else "none"
+        click.echo(f"❌ Stage '{stage_name}' not found. Available: {available}")
+        sys.exit(1)
+
+    # Check if other stages extend this one
+    extending = get_stages_that_extend(config, stage_name)
+    if extending:
+        click.echo(f"❌ Cannot remove stage '{stage_name}'.")
+        click.echo(f"   The following stages extend it: {', '.join(extending)}")
+        click.echo("   Remove or modify those stages first.")
+        sys.exit(1)
+
+    if not yes:
+        if not click.confirm(f"Remove stage '{stage_name}'?"):
+            click.echo("Cancelled.")
+            return
+
+    # Get env file before removing stage
+    stage = stages[stage_name]
+    env_filename = stage.get("env_file", f".env.{stage_name}")
+
+    # Remove stage from config
+    del config["stages"][stage_name]
+
+    app_root = get_app_root()
+    stages_file = app_root / "ops" / "build" / "stages.yml"
+
+    with open(stages_file, "w") as f:
+        yaml.dump(config, f, default_flow_style=False, sort_keys=False)
+
+    click.echo(f"✅ Removed stage '{stage_name}'")
+
+    # Handle env file deletion
+    compose_dir = app_root / "ops" / "compose"
+    env_file = compose_dir / env_filename
+
+    if env_file.exists() and env_filename != ".env":  # Don't delete base .env
+        if no_delete_env:
+            click.echo(f"   Kept {env_file.name}")
+        elif yes or click.confirm(f"Delete {env_file.name}?", default=False):
+            env_file.unlink()
+            click.echo(f"✅ Deleted {env_file.name}")
+        else:
+            click.echo(f"   Kept {env_file.name}")
 
 
 # =============================================================================

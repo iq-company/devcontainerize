@@ -82,6 +82,7 @@ _tasks:
 _skip_if_exists:
   - "{{ app_name }}/commands/__init__.py"
   - "{{ app_name }}/ops_hooks.py"
+  - "ops/build/stages.yml"
   - "ops/env/.env.template"
   - "pyproject.toml"
 

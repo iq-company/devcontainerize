@@ -145,6 +145,7 @@ app/
 │   │   │   ├── nginx/
 │   │   │   └── gunicorn/
 │   │   ├── build-settings.yml     # baker-cli config
+│   │   ├── stages.yml             # Stage configuration (dev, staging, prod)
 │   │   ├── .copier-answers.yml    # Copier answers
 │   │   └── VERSION                # Semantic version
 │   ├── compose/                   # Docker Compose files
@@ -210,37 +211,181 @@ app/
 
 ### bench ops
 
-The `bench ops` CLI provides commands for template updates, builds, and maintenance.
+The `bench ops` CLI provides commands for template updates, builds, stages, and maintenance.
 
 ```bash
 # Template Update
 bench ops update                # Update from template
-bench ops update --dry          # Preview changes (dry run)
-bench ops update --force        # Force overwrite local changes
+bench ops update -d/--dry       # Preview changes (dry run)
+bench ops update -r/--recopy    # Recopy template (for dirty repos)
 
 # Version Management
 bench ops version               # Show current version
-bench ops version --bump        # Bump bugfix version (default)
-bench ops version --bump --major    # Bump major version
-bench ops version --bump --feature  # Bump feature version
-bench ops version --bump --commit   # Bump and commit
+bench ops version -b/--bump     # Bump bugfix version (default)
+bench ops version -b -m/--major # Bump major version
+bench ops version -b -f/--feature # Bump feature version
+bench ops version -b -c/--commit  # Bump and commit
 
 # Build (wrapper for baker-cli)
 bench ops build                 # Show build plan (default)
-bench ops build --images        # Build Docker images
-bench ops build --images --push # Build and push to registry
-bench ops build --images --force # Force rebuild
+bench ops build -i/--images     # Build Docker images
+bench ops build -i -p/--push    # Build and push to registry
+bench ops build -i -f/--force   # Force rebuild
+
+# Stage Management
+bench ops stage ls              # List all defined stages
+bench ops stage ls -v           # List with details
+bench ops stage show <name>     # Show stage configuration
+bench ops stage run <name>      # Start environment for stage
+bench ops stage stop <name>     # Stop environment for stage
+bench ops stage clean <name>    # Clean up stage containers
+bench ops stage clean <name> -v # Also remove volumes
+bench ops stage build <name>    # Build images for stage
+bench ops stage add <name>      # Add a new stage
+bench ops stage rm <name>       # Remove a stage
 
 # Testing
-bench ops test                  # Run all tests
-bench ops test --app my_app     # Run tests for specific app
-bench ops test --section Auth   # Run tests for specific section
-
-# Release Environment
-bench ops release run           # Start release containers
-bench ops release stop          # Stop release containers
-bench ops release clean         # Remove containers and volumes
+bench ops run-tests             # Run all whitelisted tests (in ops_hooks.py)
+bench ops run-tests -s Auth     # Run tests for specific section
 ```
+
+<details>
+<summary>Internal commands (for build scripts)</summary>
+
+```bash
+# Called by Dockerfile during release build - not for manual use
+bench ops release-dist          # Run cleanup tasks (ops_release_cleanup hooks)
+bench ops release-dist -s prod  # Filter by stage
+```
+</details>
+
+### Stage Configuration
+
+Stages define runtime environments and their relationship to Docker build targets.
+
+#### Build Targets vs Runtime Stages
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────────┐
+│ BUILD TARGETS (baker-cli)           │ RUNTIME STAGES                                │
+├─────────────────────────────────────┼──────────────────────────────────-────────────┤
+│ base       → Image base for all     │                                               │
+│ builder    → Compilation tools      │                                               │
+│ dev        → Development image      │ dev      → Local development in devcontainers │
+│ release    → Production image       │ staging  → Staging environment                │
+│ release-alpine → Minimal image      │ prod     → Production                         │
+└─────────────────────────────────────┴───────────────────────────────────────────────┘
+```
+
+- **Build targets** define *how* images are built (Dockerfiles, layers)
+- **Runtime stages** define *what* goes into images (apps, refs) and *where* they run
+
+#### Stage Definition
+
+Stages are defined in `ops/build/stages.yml`:
+
+```yaml
+# Base apps - built into standard dev image (order matters)
+apps:
+  - name: frappe
+    source: https://github.com/frappe/frappe
+    ref: version-15           # branch, tag, or commit
+
+  - name: my_app
+    source: local
+    ref: HEAD
+
+stages:
+  # Development stage - uses dev target
+  dev:
+    target: dev               # baker-cli target to use
+    env_file: .env
+    profiles: [db, redis]
+
+  # Staging uses same apps as dev → can use standard release image
+  staging:
+    target: release
+    env_file: .env.staging
+    profiles: []              # External DB/Redis
+
+  # Prod pins specific versions → needs separate image build
+  prod:
+    extends: staging
+    env_file: .env.prod
+    image_suffix: -prod       # REQUIRED: creates my_app-release-prod
+    apps:                     # Override app refs
+      - name: frappe
+        ref: v15.47.0
+      - name: my_app
+        ref: v1.0.0
+```
+
+#### When `image_suffix` is Required
+
+If a stage customizes `apps` (different refs or ignored apps), it needs a **separate image**:
+
+| Scenario | `image_suffix` |
+|----------|----------------|
+| Same apps as base, same target | Not needed |
+| Same apps, different target | Not needed (target determines image) |
+| Custom app refs | **Required** |
+| Ignored apps | **Required** |
+
+The CLI validates this and shows warnings:
+```bash
+bench ops stage ls -v    # Shows validation warnings
+bench ops stage show prod  # Shows image name and validation
+```
+
+#### How Apps Get Into Images
+
+When you run `bench ops stage build <stage>`, the CLI:
+
+1. **Reads the stage's app definitions** from `stages.yml`
+2. **Sets environment variables** that the Dockerfile picks up:
+   - `FRAPPE_REF` - Git reference for Frappe (branch, tag, or commit)
+   - `CUSTOM_APPS` - Comma-separated list of additional apps
+   - `PRODUCTION_BUILD` - `true` for release targets, `false` for dev
+3. **Calls baker-cli** which runs `docker buildx bake`
+4. **Dockerfile.dev** calls `setup_bench_apps.py` with these values
+
+```
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ stages.yml                                                                   │
+│   apps:                                                                      │
+│     - name: frappe, ref: v15.47.0                                            │
+│     - name: my_app, source: local            # Main app (copied via COPY)    │
+│     - name: erpnext, source: https://..., ref: v15                           │
+│     - name: other_local, source: local       # Additional local app          │
+└──────────────────────────────────────────────────────────────────────────────┘
+                                       │
+                                       ▼
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ bench ops stage build prod                                                   │
+│   → FRAPPE_REF=v15.47.0                                                      │
+│   → CUSTOM_APPS=https://github.com/frappe/erpnext#v15,/opt/apps/other_local  │
+│   → PRODUCTION_BUILD=true                                                    │
+└──────────────────────────────────────────────────────────────────────────────┘
+                                       │
+                                       ▼
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ Dockerfile.dev                                                               │
+│   ARG FRAPPE_REF, CUSTOM_APPS, PRODUCTION_BUILD                              │
+│   COPY . /opt/apps/my_app                    # Main app copied here          │
+│   RUN setup_bench_apps.py --frappe-ref ... --custom-apps ... [--production]  │
+└──────────────────────────────────────────────────────────────────────────────┘
+```
+
+**Note:** The main app (`my_app`) is copied into the image via `COPY` in the Dockerfile.
+Additional apps are passed via `CUSTOM_APPS`:
+- Remote: `https://github.com/org/app#ref`
+- Local: `/opt/apps/app_name` (must be available in build context)
+
+The `setup_bench_apps.py` script:
+- Clones Frappe at the specified ref
+- Installs the main app from `/opt/apps/{{ app_name }}`
+- Clones/installs all custom apps (remote or local paths)
+- Builds frontend assets (with `--production` for release targets)
 
 ### baker-cli (Direct)
 

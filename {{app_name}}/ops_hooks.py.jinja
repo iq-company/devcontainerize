@@ -15,11 +15,17 @@ ops_tests = [
 ]
 
 # Release cleanup hooks - clean up tasks before release with `bench ops release-dist`
+# Each hook can optionally specify which stages it applies to via the "stages" key.
+# If "stages" is not specified, the hook applies to all stages.
+# Example:
+#   {"bash": "...", "stages": ["staging", "prod"]}  # Only for staging and prod
+#   {"bash": "..."}                                  # For all stages
 ops_release_cleanup = [
-	# {"function": "{{app_name}}.utils.release_cleanup.remove_dev_dependencies"},
-	{"bash": "find /home/{{image_user}}/bench -name '*.pyc' -delete"},
-	{"script": "../ops/build/resources/container-reduce.sh"},
-	{"bash": "rm -rf /home/{{image_user}}/bench/apps/{{app_name}}/delivery", "context": "only_during_build"},
-	# # for now remove sqlalchemy due to cves; will be necessary later for e.g. pandas
-	# {"bash": "rm -rf env/lib/python3.12/site-packages/sqlalchemy*"},
+    # {"function": "{{app_name}}.utils.release_cleanup.remove_dev_dependencies"},
+    {"bash": "find /home/{{image_user}}/bench -name '*.pyc' -delete"},
+    {"script": "../ops/build/resources/container-reduce.sh"},
+    {"bash": "rm -rf /home/{{image_user}}/bench/apps/{{app_name}}/ops", "context": "only_during_build"},
+    # Stage-specific cleanup examples:
+    # {"bash": "echo 'Staging-only cleanup'", "stages": ["staging"]},
+    # {"bash": "echo 'Prod-only cleanup'", "stages": ["prod"]},
 ]
