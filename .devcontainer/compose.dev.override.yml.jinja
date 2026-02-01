@@ -1,10 +1,17 @@
 # This compose file extends the base compose.yml for the development environment.
 # It mounts local source code and defines the main application service for debugging.
+#
+# Note: This file is placed in .devcontainer/ for VSCode devcontainer support.
+# It reads the shared .env file from ops/compose/.
 
 x-backend-defaults: &backend_defaults
-  <<: *ddl_override
   image: "${IQ_IMAGE}:${IQ_IMAGE_TAG}"
   platform: linux/amd64
+  profiles: ["ddl"]  # Activate DDL profile for dev
+  environment:
+    # DDL profile: use super-user credentials (empty = use defaults from .env)
+    DB_USER: ""
+    DB_PASSWORD: ""
   volumes:
     - ../ops/scripts/runtime:/home/{{ image_user }}/bench/bin-dev
     - sites:/home/{{ image_user }}/bench/sites
@@ -13,7 +20,7 @@ x-backend-defaults: &backend_defaults
       source: "${VSCODE_SETTINGS_PATH}"
       target: "/home/{{ image_user }}/.vscode-host"
   env_file:
-    - ./.env
+    - ../ops/compose/.env
 
 services:
   init:

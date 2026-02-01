@@ -115,7 +115,8 @@ feature_mkdocs:
 #   help: "Enable github CI/CD changelog generation"
 
 _exclude:
-  - .git/
+  - "**/.git"
+  - "**/.git/**"
   - .gitignore
   - .gitattributes
   - .github/

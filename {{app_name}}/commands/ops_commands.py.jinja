@@ -955,38 +955,22 @@ def stage_add(stage_name: str, extends_stage: Optional[str], target_name: Option
     if not env_file.exists():
         if click.confirm(f"Create {env_file.name} with fresh credentials?", default=True):
             # Use init_env_files script to generate env with unique credentials
-            scripts_dir = app_root / "ops" / "scripts" / "devcontainer"
+            init_script = app_root / "ops" / "scripts" / "devcontainer" / "init_env_files"
 
-            # Determine which script to use based on OS
-            if sys.platform == "win32":
-                init_script = scripts_dir / "init_env_files.ps1"
-                if init_script.exists():
-                    # PowerShell script for Windows
-                    result = subprocess.run(
-                        ["powershell", "-ExecutionPolicy", "Bypass", "-File", str(init_script)],
-                        cwd=app_root,
-                        env={**os.environ, "ENV_FILE_SUFFIX": f".{stage_name}"}
-                    )
+            if init_script.exists():
+                result = subprocess.run(
+                    ["bash", str(init_script)],
+                    cwd=app_root,
+                    env={**os.environ, "ENV_FILE_SUFFIX": f".{stage_name}"}
+                )
+                if env_file.exists():
+                    click.echo(f"✅ Created {env_file.name} with fresh credentials")
                 else:
-                    click.echo(f"⚠️  Script not found: {init_script}")
-                    env_file.touch()
-                    click.echo(f"✅ Created empty {env_file.name}")
+                    click.echo(f"⚠️  Script ran but {env_file.name} was not created")
             else:
-                init_script = scripts_dir / "init_env_files"
-                if init_script.exists():
-                    # Bash script for Linux/Mac
-                    result = subprocess.run(
-                        ["bash", str(init_script)],
-                        cwd=app_root,
-                        env={**os.environ, "ENV_FILE_SUFFIX": f".{stage_name}"}
-                    )
-                else:
-                    click.echo(f"⚠️  Script not found: {init_script}")
-                    env_file.touch()
-                    click.echo(f"✅ Created empty {env_file.name}")
-
-            if env_file.exists():
-                click.echo(f"✅ Created {env_file.name} with fresh credentials")
+                click.echo(f"⚠️  Script not found: {init_script}")
+                env_file.touch()
+                click.echo(f"✅ Created empty {env_file.name}")
 
 
 @stage.command("rm")

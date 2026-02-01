@@ -5,7 +5,7 @@
 
 set -ex # Added -x for debugging
 
-# Determine .devcontainer directory
+# Determine ops directory
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OPS_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
@@ -13,7 +13,9 @@ OPS_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 # Set via ENV_FILE_SUFFIX environment variable
 ENV_SUFFIX="${ENV_FILE_SUFFIX:-}"
 TARGET_ENV_FILE="$OPS_DIR/compose/.env${ENV_SUFFIX}"
-TEMPLATE_FILE="$OPS_DIR/env/.env.template"
+
+# Template files (note: "env." prefix instead of ".env" to avoid .gitignore issues)
+TEMPLATE_FILE="$OPS_DIR/env-templates/env.template"
 
 # --- Handle DBMS selection ---
 
@@ -95,7 +97,7 @@ else
 	sed -i "s/{{dbms}}/$DBMS/g" "$TARGET_ENV_FILE"
 
 	# --- Append DBMS-specific addon if it exists ---
-	ADDON_FILE="$OPS_DIR/env/.env.$DBMS.addon.template"
+	ADDON_FILE="$OPS_DIR/env-templates/env.$DBMS.addon.template"
 	if [ -f "$ADDON_FILE" ]; then
 		echo -e "
 # --- Appending $DBMS-specific settings ---" >> "$TARGET_ENV_FILE"

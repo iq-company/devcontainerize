@@ -1,5 +1,5 @@
 # PowerShell script to create a single .env file if it doesn't exist
-# This script is called by VSCode devcontainer initializeCommand
+# This script is called by VSCode devcontainer initializeCommand on Windows
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
@@ -12,7 +12,9 @@ $opsDir = Join-Path $scriptDir "../.."
 # Set via ENV_FILE_SUFFIX environment variable
 $envSuffix = if ($env:ENV_FILE_SUFFIX) { $env:ENV_FILE_SUFFIX } else { "" }
 $targetEnvFile = Join-Path $opsDir "compose/.env$envSuffix"
-$templateFile = Join-Path $opsDir "env/.env.template"
+
+# Template files (note: "env." prefix instead of ".env" to avoid .gitignore issues)
+$templateFile = Join-Path $opsDir "env-templates/env.template"
 
 # --- Handle DBMS selection ---
 
@@ -94,25 +96,25 @@ if (Test-Path $targetEnvFile) {
     $content = Get-Content $targetEnvFile -Raw
 
     # General placeholders
-    $content = $content -replace '{{random_lower}}', $randomLower
-    $content = $content -replace '{{vscode_settings_path}}', $vscodeSettingsPath
-    $content = $content -replace '{{uid}}', $currentUid
-    $content = $content -replace '{{gid}}', $currentGid
-    $content = $content -replace 'IQ_ADMIN_PW={{random_password}}', "IQ_ADMIN_PW=$iqAdminPwVal"
+    $content = $content -replace '\{\{random_lower\}\}', $randomLower
+    $content = $content -replace '\{\{vscode_settings_path\}\}', $vscodeSettingsPath
+    $content = $content -replace '\{\{uid\}\}', $currentUid
+    $content = $content -replace '\{\{gid\}\}', $currentGid
+    $content = $content -replace 'IQ_ADMIN_PW=\{\{random_password\}\}', "IQ_ADMIN_PW=$iqAdminPwVal"
 
     # Database placeholders
-    $content = $content -replace '{{db_host}}', $dbHostVal
-    $content = $content -replace '{{db_port}}', $dbPortVal
-    $content = $content -replace '{{db_super_user}}', $dbSuperUserVal
-    $content = $content -replace '{{db_super_user_pw}}', $dbSuperUserPwVal
-    $content = $content -replace '{{db_root_password}}', $dbRootPasswordVal
-    $content = $content -replace '{{db_password}}', $dbPasswordVal
-    $content = $content -replace '{{dbms}}', $dbms
+    $content = $content -replace '\{\{db_host\}\}', $dbHostVal
+    $content = $content -replace '\{\{db_port\}\}', $dbPortVal
+    $content = $content -replace '\{\{db_super_user\}\}', $dbSuperUserVal
+    $content = $content -replace '\{\{db_super_user_pw\}\}', $dbSuperUserPwVal
+    $content = $content -replace '\{\{db_root_password\}\}', $dbRootPasswordVal
+    $content = $content -replace '\{\{db_password\}\}', $dbPasswordVal
+    $content = $content -replace '\{\{dbms\}\}', $dbms
 
     $content | Set-Content $targetEnvFile
 
     # --- Append DBMS-specific addon if it exists ---
-    $addonFile = Join-Path $opsDir "env/.env.$dbms.addon.template"
+    $addonFile = Join-Path $opsDir "env-templates/env.$dbms.addon.template"
     if (Test-Path $addonFile) {
         Add-Content -Path $targetEnvFile -Value "`n# --- Appending $dbms-specific settings ---"
         Add-Content -Path $targetEnvFile -Value (Get-Content $addonFile)
