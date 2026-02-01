@@ -2,13 +2,13 @@
 Bench ops CLI - Operations commands for template updates, builds, and maintenance.
 
 Usage:
-    bench ops template update       # Update from template
-    bench ops template status       # Show template version
-    bench ops version bump          # Bump version number
-    bench ops test                  # Run tests
-    bench ops release run           # Start release environment
-    bench ops release stop          # Stop release environment
-    bench ops release clean         # Clean release environment
+    bench ops update                 # Update from template
+    bench ops version                # Show version
+    bench ops version --bump         # Bump version
+    bench ops build                  # Show build plan
+    bench ops build --images         # Build Docker images
+    bench ops test                   # Run tests
+    bench ops release run/stop/clean # Manage release environment
 """
 
 import os
@@ -41,22 +41,20 @@ def ops():
 
 
 # =============================================================================
-# Template Commands
+# Update Command (copier Template Sync)
 # =============================================================================
 
-@ops.group()
-def template():
-    """Template management commands."""
-    pass
-
-
-@template.command("update")
-@click.option("--dry", is_flag=True, help="Dry run (preview changes without applying)")
-@click.option("--force", is_flag=True, help="Force update (overwrite local changes)")
-def template_update(dry: bool, force: bool):
-    """Update from devcontainerize template (copier update --trust)."""
+@ops.command("update")
+@click.option("-d", "--dry", is_flag=True, help="Dry run (preview changes without applying)")
+@click.option("-f", "--force", is_flag=True, help="Force update (overwrite local changes)")
+def update_cmd(dry: bool, force: bool):
+    """Update from devcontainerize template."""
     app_root = get_app_root()
     answers_file = app_root / "ops" / "build" / ".copier-answers.yml"
+
+    # Fallback to legacy location
+    if not answers_file.exists():
+        answers_file = app_root / ".copier-answers.yml"
 
     cmd = ["copier", "update", "--trust"]
 
@@ -75,78 +73,53 @@ def template_update(dry: bool, force: bool):
     sys.exit(result.returncode)
 
 
-@template.command("status")
-def template_status():
-    """Show current template version and source."""
-    app_root = get_app_root()
-    answers_file = app_root / "ops" / "build" / ".copier-answers.yml"
-
-    if not answers_file.exists():
-        # Try legacy location
-        answers_file = app_root / ".copier-answers.yml"
-
-    if answers_file.exists():
-        click.echo(f"📄 Answers file: {answers_file}")
-        click.echo("─" * 40)
-        click.echo(answers_file.read_text())
-    else:
-        click.echo("❌ No .copier-answers.yml found")
-        click.echo("   This project may not have been created with copier.")
-
-
 # =============================================================================
-# Version Commands
+# Version Command
 # =============================================================================
 
-@ops.group()
-def version():
-    """Version management commands."""
-    pass
-
-
-@version.command("show")
-def version_show():
-    """Show current version."""
-    app_root = get_app_root()
-    version_file = app_root / "ops" / "build" / "VERSION"
-
-    if version_file.exists():
-        ver = version_file.read_text().strip()
-        click.echo(f"Current version: {ver}")
-    else:
-        click.echo("❌ VERSION file not found")
-
-
-@version.command("bump")
-@click.option("--major", "component", flag_value="major", help="Bump major version (X.0.0)")
-@click.option("--feature", "component", flag_value="feature", help="Bump feature version (x.X.0)")
-@click.option("--bugfix", "component", flag_value="bugfix", default=True, help="Bump bugfix version (x.x.X)")
-@click.option("--commit", is_flag=True, help="Commit the version bump")
-def version_bump(component: str, commit: bool):
-    """Bump version number."""
+@ops.command("version")
+@click.option("-b", "--bump", is_flag=True, help="Bump version number")
+@click.option("-m", "--major", is_flag=True, help="Bump major version (X.0.0)")
+@click.option("-f", "--feature", is_flag=True, help="Bump feature version (x.X.0)")
+@click.option("-c", "--commit", is_flag=True, help="Commit the version bump")
+def version_cmd(bump: bool, major: bool, feature: bool, commit: bool):
+    """Show or bump version number."""
     app_root = get_app_root()
     version_file = app_root / "ops" / "build" / "VERSION"
     init_file = app_root / "{{ app_name }}" / "__init__.py"
 
     if not version_file.exists():
-        click.echo("❌ VERSION file not found")
+        click.echo("❌ VERSION file not found at ops/build/VERSION")
         sys.exit(1)
 
     current = version_file.read_text().strip()
-    parts = current.split(".")
 
+    if not bump:
+        # Just show version
+        click.echo(f"Version: {current}")
+
+        # Also show template info if available
+        answers_file = app_root / "ops" / "build" / ".copier-answers.yml"
+        if not answers_file.exists():
+            answers_file = app_root / ".copier-answers.yml"
+        if answers_file.exists():
+            click.echo(f"\nTemplate answers: {answers_file}")
+        return
+
+    # Bump version
+    parts = current.split(".")
     if len(parts) != 3:
         click.echo(f"❌ Invalid version format: {current}")
         sys.exit(1)
 
-    major, minor, patch = map(int, parts)
+    maj, minor, patch = map(int, parts)
 
-    if component == "major":
-        new_version = f"{major + 1}.0.0"
-    elif component == "feature":
-        new_version = f"{major}.{minor + 1}.0"
-    else:  # bugfix
-        new_version = f"{major}.{minor}.{patch + 1}"
+    if major:
+        new_version = f"{maj + 1}.0.0"
+    elif feature:
+        new_version = f"{maj}.{minor + 1}.0"
+    else:  # bugfix (default)
+        new_version = f"{maj}.{minor}.{patch + 1}"
 
     click.echo(f"Bumping version: {current} → {new_version}")
 
@@ -172,16 +145,52 @@ def version_bump(component: str, commit: bool):
 
 
 # =============================================================================
-# Test Commands
+# Build Command
+# =============================================================================
+
+@ops.command("build")
+@click.option("-i", "--images", is_flag=True, help="Build Docker images (default: show plan)")
+@click.option("-t", "--targets", multiple=True, help="Specific targets to build")
+@click.option("-p", "--push", is_flag=True, help="Push images after building")
+@click.option("-f", "--force", is_flag=True, help="Force rebuild")
+def build_cmd(images: bool, targets: tuple, push: bool, force: bool):
+    """Show build plan or build Docker images."""
+    app_root = get_app_root()
+    settings = app_root / "ops" / "build" / "build-settings.yml"
+
+    if not settings.exists():
+        click.echo(f"❌ Build settings not found at {settings}")
+        sys.exit(1)
+
+    if images:
+        # Build images
+        cmd = ["baker", "build", "--settings", str(settings)]
+
+        if targets:
+            cmd.extend(["--targets", ",".join(targets)])
+        if push:
+            cmd.append("--push")
+        if force:
+            cmd.append("--force")
+    else:
+        # Show plan (default)
+        cmd = ["baker", "plan", "--settings", str(settings)]
+
+    result = subprocess.run(cmd, cwd=app_root)
+    sys.exit(result.returncode)
+
+
+# =============================================================================
+# Test Command
 # =============================================================================
 
 @ops.command("test")
-@click.option("--app", "app_name", help="Run tests for a specific app")
-@click.option("--module", help="Run tests for a specific module")
-@click.option("--doctype", help="Run tests for a specific doctype")
-@click.option("--test", "test_name", help="Run a specific test function")
-@click.option("--section", help="Run tests for a specific section")
-@click.option("--continue-on-error", is_flag=True, help="Continue running tests after failures")
+@click.option("-a", "--app", "app_name", help="Run tests for a specific app")
+@click.option("-m", "--module", help="Run tests for a specific module")
+@click.option("-d", "--doctype", help="Run tests for a specific doctype")
+@click.option("-t", "--test", "test_name", help="Run a specific test function")
+@click.option("-s", "--section", help="Run tests for a specific section")
+@click.option("-c", "--continue-on-error", is_flag=True, help="Continue running tests after failures")
 @click.option("--site", default="test_{{ app_name }}_site", help="Test site name")
 def test_cmd(app_name, module, doctype, test_name, section, continue_on_error, site):
     """Run tests."""
@@ -222,7 +231,7 @@ def release():
 
 
 @release.command("run")
-@click.option("--env-file", type=click.Path(exists=True), help="Path to custom .env file")
+@click.option("-e", "--env-file", type=click.Path(exists=True), help="Path to custom .env file")
 def release_run(env_file):
     """Start release environment."""
     app_root = get_app_root()
@@ -256,49 +265,6 @@ def release_clean():
 
     click.echo("Cleaning release environment...")
     result = subprocess.run(["bash", str(script)], cwd=app_root)
-    sys.exit(result.returncode)
-
-
-# =============================================================================
-# Build Commands (wrapper for baker-cli)
-# =============================================================================
-
-@ops.group()
-def build():
-    """Build commands (wrapper for baker-cli)."""
-    pass
-
-
-@build.command("plan")
-def build_plan():
-    """Show build plan (baker plan)."""
-    app_root = get_app_root()
-    settings = app_root / "ops" / "build" / "build-settings.yml"
-
-    cmd = ["baker", "plan", "--settings", str(settings)]
-    result = subprocess.run(cmd, cwd=app_root)
-    sys.exit(result.returncode)
-
-
-@build.command("images")
-@click.option("--targets", multiple=True, help="Specific targets to build")
-@click.option("--push", is_flag=True, help="Push images after building")
-@click.option("--force", is_flag=True, help="Force rebuild")
-def build_images(targets, push, force):
-    """Build Docker images (baker build)."""
-    app_root = get_app_root()
-    settings = app_root / "ops" / "build" / "build-settings.yml"
-
-    cmd = ["baker", "build", "--settings", str(settings)]
-
-    if targets:
-        cmd.extend(["--targets", ",".join(targets)])
-    if push:
-        cmd.append("--push")
-    if force:
-        cmd.append("--force")
-
-    result = subprocess.run(cmd, cwd=app_root)
     sys.exit(result.returncode)
 
 

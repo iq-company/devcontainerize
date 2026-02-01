@@ -211,17 +211,23 @@ app/
 The `bench ops` CLI provides commands for template updates, builds, and maintenance.
 
 ```bash
-# Template Management
-bench ops template update       # Update from template (copier update --trust)
-bench ops template update --dry # Preview changes (dry run)
-bench ops template status       # Show current template version
+# Template Update
+bench ops update                # Update from template
+bench ops update --dry          # Preview changes (dry run)
+bench ops update --force        # Force overwrite local changes
 
 # Version Management
-bench ops version show          # Show current version
-bench ops version bump          # Bump bugfix version (default)
-bench ops version bump --major  # Bump major version
-bench ops version bump --feature # Bump feature version
-bench ops version bump --commit # Bump and commit
+bench ops version               # Show current version
+bench ops version --bump        # Bump bugfix version (default)
+bench ops version --bump --major    # Bump major version
+bench ops version --bump --feature  # Bump feature version
+bench ops version --bump --commit   # Bump and commit
+
+# Build (wrapper for baker-cli)
+bench ops build                 # Show build plan (default)
+bench ops build --images        # Build Docker images
+bench ops build --images --push # Build and push to registry
+bench ops build --images --force # Force rebuild
 
 # Testing
 bench ops test                  # Run all tests
@@ -232,11 +238,6 @@ bench ops test --section Auth   # Run tests for specific section
 bench ops release run           # Start release containers
 bench ops release stop          # Stop release containers
 bench ops release clean         # Remove containers and volumes
-
-# Build Commands (wrapper for baker-cli)
-bench ops build plan            # Show build plan
-bench ops build images          # Build Docker images
-bench ops build images --push   # Build and push to registry
 ```
 
 ### baker-cli (Direct)
@@ -342,16 +343,16 @@ This keeps the root directory clean. The `bench ops template update` command aut
 
 ```bash
 # Preview changes (dry-run)
-bench ops template update --dry
+bench ops update --dry
 
 # Apply updates
-bench ops template update
+bench ops update
 
 # Force update (overwrite local changes)
-bench ops template update --force
+bench ops update --force
 ```
 
-**Note**: Always use `bench ops template update` instead of calling `copier update` directly. The CLI handles:
+**Note**: Always use `bench ops update` instead of calling `copier update` directly. The CLI handles:
 - Locating the answers file in `ops/build/`
 - Automatically adding `--trust`
 - Moving the updated answers file back to `ops/build/`
