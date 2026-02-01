@@ -4,11 +4,14 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
-# Determine .devcontainer directory
+# Determine ops directory
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Definition
-$opsDir = Join-Path $scriptDir ".."
+$opsDir = Join-Path $scriptDir "../.."
 
-$targetEnvFile = Join-Path $opsDir "compose/.env"
+# Support custom env file suffix (e.g., ".staging" for .env.staging)
+# Set via ENV_FILE_SUFFIX environment variable
+$envSuffix = if ($env:ENV_FILE_SUFFIX) { $env:ENV_FILE_SUFFIX } else { "" }
+$targetEnvFile = Join-Path $opsDir "compose/.env$envSuffix"
 $templateFile = Join-Path $opsDir "env/.env.template"
 
 # --- Handle DBMS selection ---

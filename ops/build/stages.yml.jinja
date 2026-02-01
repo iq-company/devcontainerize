@@ -46,6 +46,8 @@ apps:
 #   - `bench ops stage build <stage>` will build with stage-specific apps
 
 stages:
+  # Development stage - used by VSCode devcontainer
+  # Uses dev image with local DB and Redis services
   dev:
     target: dev
     env_file: .env
@@ -53,15 +55,26 @@ stages:
       - db
       - redis
 
-# Example additional stages (uncomment and customize):
+# =============================================================================
+# Example additional stages (uncomment and customize)
+# =============================================================================
 #
-#  # Staging uses the same apps as dev → can use the standard release image
+#  # Local stage - run release image locally with all services
+#  # Useful for testing the production image before deployment
+#  local:
+#    target: release
+#    env_file: .env.local
+#    profiles:
+#      - db
+#      - redis
+#
+#  # Staging - uses release image with external services
 #  staging:
 #    target: release
 #    env_file: .env.staging
 #    profiles: []                    # External DB/Redis
 #
-#  # Prod pins app versions → needs a separate image
+#  # Production - pins specific app versions (requires separate image)
 #  prod:
 #    extends: staging
 #    env_file: .env.prod
@@ -71,4 +84,3 @@ stages:
 #        ref: v15.47.0               # Pin to specific version
 #      - name: {{ app_name }}
 #        ref: v1.0.0                 # Pin to release tag
-#

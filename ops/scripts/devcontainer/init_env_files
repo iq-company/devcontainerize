@@ -7,9 +7,12 @@ set -ex # Added -x for debugging
 
 # Determine .devcontainer directory
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-OPS_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+OPS_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
-TARGET_ENV_FILE="$OPS_DIR/compose/.env"
+# Support custom env file suffix (e.g., ".staging" for .env.staging)
+# Set via ENV_FILE_SUFFIX environment variable
+ENV_SUFFIX="${ENV_FILE_SUFFIX:-}"
+TARGET_ENV_FILE="$OPS_DIR/compose/.env${ENV_SUFFIX}"
 TEMPLATE_FILE="$OPS_DIR/env/.env.template"
 
 # --- Handle DBMS selection ---

@@ -948,26 +948,45 @@ def stage_add(stage_name: str, extends_stage: Optional[str], target_name: Option
 
     click.echo(f"✅ Added stage '{stage_name}'")
 
-    # Create env file
+    # Create env file using init_env_files script (generates unique credentials)
     compose_dir = app_root / "ops" / "compose"
     env_file = compose_dir / f".env.{stage_name}"
 
     if not env_file.exists():
-        if click.confirm(f"Create {env_file.name}?", default=True):
-            # Copy from parent or base
-            source_env = None
-            if extends_stage:
-                parent_stage = stages.get(extends_stage, {})
-                source_env = compose_dir / parent_stage.get("env_file", ".env")
-            if not source_env or not source_env.exists():
-                source_env = compose_dir / ".env"
+        if click.confirm(f"Create {env_file.name} with fresh credentials?", default=True):
+            # Use init_env_files script to generate env with unique credentials
+            scripts_dir = app_root / "ops" / "scripts" / "devcontainer"
 
-            if source_env.exists():
-                shutil.copy(source_env, env_file)
-                click.echo(f"✅ Created {env_file.name} (copied from {source_env.name})")
+            # Determine which script to use based on OS
+            if sys.platform == "win32":
+                init_script = scripts_dir / "init_env_files.ps1"
+                if init_script.exists():
+                    # PowerShell script for Windows
+                    result = subprocess.run(
+                        ["powershell", "-ExecutionPolicy", "Bypass", "-File", str(init_script)],
+                        cwd=app_root,
+                        env={**os.environ, "ENV_FILE_SUFFIX": f".{stage_name}"}
+                    )
+                else:
+                    click.echo(f"⚠️  Script not found: {init_script}")
+                    env_file.touch()
+                    click.echo(f"✅ Created empty {env_file.name}")
             else:
-                env_file.touch()
-                click.echo(f"✅ Created empty {env_file.name}")
+                init_script = scripts_dir / "init_env_files"
+                if init_script.exists():
+                    # Bash script for Linux/Mac
+                    result = subprocess.run(
+                        ["bash", str(init_script)],
+                        cwd=app_root,
+                        env={**os.environ, "ENV_FILE_SUFFIX": f".{stage_name}"}
+                    )
+                else:
+                    click.echo(f"⚠️  Script not found: {init_script}")
+                    env_file.touch()
+                    click.echo(f"✅ Created empty {env_file.name}")
+
+            if env_file.exists():
+                click.echo(f"✅ Created {env_file.name} with fresh credentials")
 
 
 @stage.command("rm")
