@@ -2,7 +2,7 @@
 
 x-backend-defaults: &backend_defaults
   <<: *ddl_override
-  image: ${{ '{' }}{{ image_prefix }}-release:-latest}
+  image: ${IQ_IMAGE:-{{ image_prefix }}-release}:${IQ_IMAGE_TAG:-latest}
   platform: linux/amd64
   volumes:
     - sites:/home/{{ image_user }}/bench/sites

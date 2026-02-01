@@ -1,8 +1,21 @@
+# Example: How to add optional services to your compose setup
+#
+# 1. Copy this file and rename it (e.g., compose.with-ocr-ext.yml)
+# 2. Define your service with a profile (so it doesn't start by default)
+# 3. Add a reference to your file in compose.base.yml:
+#    include:
+#      - ./compose.with-your-service.yml
+#      - ./compose.${DBMS:-postgres}.yml
+#
+# 4. Start with profile: docker compose --profile sample up
+#
+# Services with profiles only start when explicitly requested.
+# See: https://docs.docker.com/compose/profiles/
+
 services:
-  ocr-rt:
+  sample-service:
     profiles:
       - sample
-    # image: sample-rt # needs to be build first (#1 in ops/dockerfiles/Dockerfile.sample_extensions)
-    build: ../dockerfiles/sample_extensions
-
-
+    image: alpine:latest
+    command: echo "Sample service running"
+    # build: ../dockerfiles/sample_extensions  # Or build from Dockerfile

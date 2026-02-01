@@ -1,5 +1,6 @@
 include:
-  - ./compose.with-ocr-ext.yml
+  # Add project-specific compose files here, e.g.:
+  # - ./compose.with-optional-service.example.yml
   - ./compose.${DBMS:-postgres}.yml
 
 services:
