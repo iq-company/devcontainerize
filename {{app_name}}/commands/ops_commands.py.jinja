@@ -59,7 +59,9 @@ def update_cmd(dry: bool, force: bool):
     cmd = ["copier", "update", "--trust"]
 
     if answers_file.exists():
-        cmd.extend(["--answers-file", str(answers_file)])
+        # copier requires relative path for answers-file
+        relative_answers = answers_file.relative_to(app_root)
+        cmd.extend(["--answers-file", str(relative_answers)])
 
     if dry:
         cmd.append("--pretend")
