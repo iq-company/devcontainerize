@@ -1,0 +1,48 @@
+#!/usr/bin/bash
+#
+# App Patches - Applied during image build after app installation
+#
+# This script runs AFTER all apps are installed but BEFORE requirements.
+# Use it to:
+#   - Conditionally remove optional dependencies based on ENV flags
+#   - Modify pyproject.toml based on build configuration
+#   - Clean up files not needed in the image
+#
+# Called from: setup_bench_apps.py
+# Working directory: /home/{{ image_user }} (or bench directory if local)
+
+set -e
+
+CWD="$(pwd)"
+
+if [ -d "apps" ] && [ -d "sites" ]; then
+    APP_TARGET_DIR="${CWD}/apps/{{ app_name }}"
+elif [ -d "bench" ]; then
+    APP_TARGET_DIR="${CWD}/bench/apps/{{ app_name }}"
+else
+    echo "Error: Invalid working directory for app-patches.sh"
+    exit 1
+fi
+
+echo "Patching {{ app_name }} at: $APP_TARGET_DIR"
+
+# Example: Feature-toggle based dependency removal
+# Useful for reducing image size by removing unused optional features
+#
+# declare -A package_map=(
+#     [ENABLE_OCR]="rapidocr-onnxruntime"
+#     [ENABLE_PANDAS]="pandas"
+#     [ENABLE_NLP]="spacy"
+# )
+#
+# PYPROJECT_FILE="$APP_TARGET_DIR/pyproject.toml"
+#
+# for env_var in "${!package_map[@]}"; do
+#     if [ "${!env_var:-false}" != "true" ]; then
+#         pkg="${package_map[$env_var]}"
+#         sed -i "/^[[:space:]]*\"${pkg}\"/d" "$PYPROJECT_FILE"
+#         echo "Removed optional dependency: $pkg (${env_var}=false)"
+#     fi
+# done
+
+echo "App patches applied."

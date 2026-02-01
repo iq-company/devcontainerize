@@ -1,0 +1,10 @@
+#!/usr/bin/env python3
+
+# Calls `bench iq-release-dist` with root user. The bench command itself doesn't allow
+# calls with root.
+# But as the routines should be able to delete files (like system libraries) this is
+# necessary.
+from {{ app_name }}.commands.dist_commands import iq_release_dist
+
+iq_release_dist()
+

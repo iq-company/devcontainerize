@@ -1,0 +1,74 @@
+# Stage Configuration for {{ project_name }}
+# Manage with: bench ops stage ls|show|add|rm|run|stop|clean|build
+
+# =============================================================================
+# Apps to install in images (order matters!)
+# =============================================================================
+# These are the DEFAULT apps built into the base dev/release images.
+# Stages can override refs or ignore apps - but that requires a separate image build.
+
+apps:
+  - name: frappe
+    source: https://github.com/frappe/frappe
+    ref: {{ frappe_ref }}
+
+  - name: {{ app_name }}
+    source: local
+    ref: HEAD
+
+# =============================================================================
+# Stage Definitions
+# =============================================================================
+# Stages define runtime environments and their relationship to build targets.
+#
+# Properties:
+#   - target: baker-cli build target (REQUIRED, e.g., dev, release, release-alpine)
+#   - env_file: .env file to use (relative to ops/compose/)
+#   - profiles: compose profiles to activate [db, redis, ...]
+#   - extends: inherit from another stage (inherits target if not overridden)
+#
+# App customization (requires separate image):
+#   - apps: override app refs or ignore apps
+#   - image_suffix: REQUIRED when apps differ from base (e.g., -staging)
+#
+# The relationship between stages and build targets:
+#
+#   ┌─────────────────────────────────────────────────────────────────────┐
+#   │ BUILD TARGETS (baker-cli)         │ STAGES (runtime)               │
+#   ├───────────────────────────────────┼─────────────────────────────────┤
+#   │ dev        → Development image    │ dev     → Local development    │
+#   │ release    → Production image     │ staging → Staging environment  │
+#   │ release-alpine → Minimal image    │ prod    → Production           │
+#   └───────────────────────────────────┴─────────────────────────────────┘
+#
+# IMPORTANT: If a stage customizes `apps`, it needs its own image!
+#   - Set `image_suffix` to create a distinct image name
+#   - `bench ops stage build <stage>` will build with stage-specific apps
+
+stages:
+  dev:
+    target: dev
+    env_file: .env
+    profiles:
+      - db
+      - redis
+
+# Example additional stages (uncomment and customize):
+#
+#  # Staging uses the same apps as dev → can use the standard release image
+#  staging:
+#    target: release
+#    env_file: .env.staging
+#    profiles: []                    # External DB/Redis
+#
+#  # Prod pins app versions → needs a separate image
+#  prod:
+#    extends: staging
+#    env_file: .env.prod
+#    image_suffix: -prod             # REQUIRED: creates {{ image_prefix }}-release-prod
+#    apps:
+#      - name: frappe
+#        ref: v15.47.0               # Pin to specific version
+#      - name: {{ app_name }}
+#        ref: v1.0.0                 # Pin to release tag
+#

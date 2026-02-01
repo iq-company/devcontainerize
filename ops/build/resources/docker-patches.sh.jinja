@@ -1,0 +1,39 @@
+#!/usr/bin/bash
+#
+# Docker Patches - Applied during image build after bench setup
+#
+# This script runs AFTER bench is set up, with all apps installed.
+# Use it to:
+#   - Inject monkey patches into Python packages
+#   - Customize branding (app name in UI)
+#   - Install optional models (NLP, ML, etc.)
+#
+# Called from: Dockerfile.dev (RUN docker-patches.sh)
+# Working directory: /home/{{ image_user }}/bench
+# User: root
+
+set -e
+
+BENCH_DIR="/home/{{ image_user }}/bench"
+PYTHON_VENV_VERSION=$(ls $BENCH_DIR/env/lib/ | grep -E '^python[0-9]+\.[0-9]+' | sort -V | tail -n 1)
+
+echo "Applying docker patches..."
+echo "  Bench: $BENCH_DIR"
+echo "  Python: $PYTHON_VENV_VERSION"
+
+# Example: Inject monkey patches into bench CLI
+# INSERT_LINE="import {{ app_name }}.monkey_patches.inject_logger"
+# sed -i "/import sys/a $INSERT_LINE" "$BENCH_DIR/env/lib/$PYTHON_VENV_VERSION/site-packages/bench/cli.py"
+
+# Example: Customize branding
+# BRAND_NAME="${IQ_BRAND_NAME:-{{ project_name }}}"
+# sed -i "s/__(\"Starting Frappe ...\")/__(\"Starting $BRAND_NAME ...\")/" \
+#     "$BENCH_DIR/apps/frappe/frappe/desk/page/setup_wizard/setup_wizard.js"
+
+# Example: Install optional NLP models
+# if [ "${ENABLE_NLP:-false}" = "true" ]; then
+#     pip install spacy
+#     python -m spacy download en_core_web_sm
+# fi
+
+echo "Docker patches applied."
