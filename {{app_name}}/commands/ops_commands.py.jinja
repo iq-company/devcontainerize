@@ -1,5 +1,5 @@
 """
-Bench ops CLI - Operations commands for template updates, builds, and maintenance.
+Bench ops CLI - Operations commands for template updates, builds, testing, and maintenance.
 
 Usage:
     bench ops update                 # Update from template
@@ -7,17 +7,23 @@ Usage:
     bench ops version --bump         # Bump version
     bench ops build                  # Show build plan
     bench ops build --images         # Build Docker images
-    bench ops test                   # Run tests
+    bench ops run-tests              # Run tests
+    bench ops release-dist           # Execute release cleanup
     bench ops release run/stop/clean # Manage release environment
 """
 
+import importlib
 import os
 import re
+import shutil
 import subprocess
 import sys
+import threading
 from pathlib import Path
 
 import click
+import frappe
+from frappe.commands import pass_context
 
 
 def get_app_root() -> Path:
@@ -183,47 +189,227 @@ def build_cmd(images: bool, targets: tuple, push: bool, force: bool):
 
 
 # =============================================================================
-# Test Command
+# Run Tests Command
 # =============================================================================
 
-@ops.command("test")
-@click.option("-a", "--app", "app_name", help="Run tests for a specific app")
+@ops.command("run-tests")
+@click.option("-a", "--app", "app_filter", help="Run tests for a specific app")
 @click.option("-m", "--module", help="Run tests for a specific module")
 @click.option("-d", "--doctype", help="Run tests for a specific doctype")
-@click.option("-t", "--test", "test_name", help="Run a specific test function")
+@click.option("-t", "--test", "test_filter", help="Run a specific test function")
 @click.option("-s", "--section", help="Run tests for a specific section")
 @click.option("-c", "--continue-on-error", is_flag=True, help="Continue running tests after failures")
-@click.option("--site", default="test_{{ app_name }}_site", help="Test site name")
-def test_cmd(app_name, module, doctype, test_name, section, continue_on_error, site):
-    """Run tests."""
-    bench_root = get_bench_root()
+@pass_context
+def run_tests_cmd(context, app_filter, module, doctype, test_filter, section, continue_on_error):
+    """Run tests defined in ops_tests hooks."""
+    site_name = context.sites[0] if context.sites else None
+    if not site_name:
+        raise frappe.SiteNotSpecifiedError
 
-    # Ensure site name starts with test_
-    if not site.startswith("test_"):
-        site = f"test_{site}"
+    frappe.init(site=site_name)
 
-    cmd = ["bench", "--site", site, "run-iq-tests"]
+    # Divider lines for better visibility
+    app_divider = "\n" + "=" * 80 + "\n{:^80}\n" + "=" * 80
+    section_divider = "\n" + "-" * 60 + "\n{:^60}\n" + "-" * 60
+    result_divider = "\n" + "=" * 100 + "\n{:^100}\n" + "=" * 100
 
-    if app_name:
-        cmd.extend(["--app", app_name])
-    if module:
-        cmd.extend(["--module", module])
-    if doctype:
-        cmd.extend(["--doctype", doctype])
-    if test_name:
-        cmd.extend(["--test", test_name])
-    if section:
-        cmd.extend(["--section", section])
-    if continue_on_error:
-        cmd.append("--continue-on-error")
+    # Store test results for summary
+    results = {"passed": [], "failed": []}
+    skip_on_first_error = not continue_on_error
 
-    click.echo(f"Running: {' '.join(cmd)}")
-    result = subprocess.run(cmd, cwd=bench_root)
-    sys.exit(result.returncode)
+    installed_apps = frappe.get_installed_apps()
+
+    for app_name in installed_apps:
+        # Skip app if filter is provided and doesn't match
+        if app_filter and app_filter != app_name:
+            continue
+
+        # Get ops_tests hooks from the current app
+        app_ops_tests = frappe.get_hooks("ops_tests", app_name=app_name)
+
+        if not app_ops_tests:
+            continue
+
+        # Print app header with clear divider
+        print(app_divider.format(f" TESTS FOR APP: {app_name.upper()} "))
+
+        for test_section in app_ops_tests:
+            # Only run specific section if requested
+            if section and test_section.get("section") != section:
+                continue
+
+            # Print section header
+            section_name = test_section.get("section", "Unnamed section")
+            print(section_divider.format(f" SECTION: {section_name} "))
+
+            for step in test_section.get("steps", []):
+                run_cmd = f"bench --site {frappe.local.site} run-tests"
+                test_params = []
+                step_descriptor = ""
+
+                # Add app as first parameter
+                test_params.append(f"--app {app_name}")
+
+                if "doctype" in step:
+                    test_doctype = step["doctype"]
+                    if doctype and doctype != test_doctype:
+                        continue
+                    test_params.append(f"--doctype \"{test_doctype}\"")
+                    step_descriptor = f"DocType: {test_doctype}"
+
+                elif "module" in step:
+                    if module and module != step["module"]:
+                        continue
+                    module_path = step["module"]
+                    test_params.append(f"--module {module_path}")
+                    step_descriptor = f"Module: {module_path}"
+
+                    if "tests" in step:
+                        test_args = []
+                        for test_name in step["tests"]:
+                            if test_filter and test_filter != test_name:
+                                continue
+                            test_args.append(f"--test {test_name}")
+                            step_descriptor += f", Test: {test_name}"
+                        if test_args:
+                            test_params.extend(test_args)
+
+                test_params.append("--skip-test-records")
+                full_cmd = f"{run_cmd} {' '.join(test_params)}"
+
+                print(f"\n> EXECUTING: {full_cmd}\n")
+
+                def reader_thread(pipe, queue):
+                    try:
+                        with pipe:
+                            for line in iter(pipe.readline, b''):
+                                line_str = line.decode('utf-8')
+                                queue.append(line_str)
+                                print(line_str, end='', flush=True)
+                    finally:
+                        pass
+
+                process = subprocess.Popen(
+                    full_cmd, shell=True,
+                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=1
+                )
+
+                stdout_lines, stderr_lines = [], []
+                stdout_thread = threading.Thread(target=reader_thread, args=[process.stdout, stdout_lines])
+                stderr_thread = threading.Thread(target=reader_thread, args=[process.stderr, stderr_lines])
+                stdout_thread.start()
+                stderr_thread.start()
+
+                return_code = process.wait()
+                stdout_thread.join()
+                stderr_thread.join()
+
+                output = ''.join(stdout_lines) + ''.join(stderr_lines)
+                has_failure = return_code != 0 or any(p in output for p in ["FAILED", "FAIL:", "ERROR:", "Traceback", "AssertionError"])
+
+                test_result = {
+                    "app": app_name, "section": section_name, "step": step_descriptor,
+                    "command": full_cmd, "return_code": return_code, "output": output
+                }
+
+                if not has_failure:
+                    results["passed"].append(test_result)
+                    print(f"\n✅ PASSED: {step_descriptor}")
+                else:
+                    results["failed"].append(test_result)
+                    print(f"\n❌ FAILED: {step_descriptor}")
+                    if skip_on_first_error:
+                        print("\nStopping tests due to error. Use --continue-on-error to run all tests.")
+                        break
+
+                print("\n" + "-" * 40)
+
+            if skip_on_first_error and results["failed"]:
+                break
+        if skip_on_first_error and results["failed"]:
+            break
+
+    # Print summary
+    print(result_divider.format(" TEST RESULTS SUMMARY "))
+
+    if results["passed"]:
+        print(f"\n✅ PASSED TEST UNITS: {len(results['passed'])}")
+        for i, r in enumerate(results["passed"], 1):
+            print(f"  {i}. App: {r['app']}, Section: {r['section']}, {r['step']}")
+
+    if results["failed"]:
+        print(f"\n❌ FAILED TESTS: {len(results['failed'])}")
+        for i, r in enumerate(results["failed"], 1):
+            print(f"  {i}. App: {r['app']}, Section: {r['section']}, {r['step']}")
+            print(f"     Command: {r['command']}")
+
+    if results["failed"]:
+        print("\n🛑 Some tests failed.")
+        sys.exit(1)
+    elif not (results["passed"] or results["failed"]):
+        print("\n⚠️ No tests were run!")
+        sys.exit(0)
+    else:
+        print(f"\n✅ All {len(results['passed'])} tests passed!")
+        sys.exit(0)
 
 
 # =============================================================================
-# Release Commands
+# Release Dist Command
+# =============================================================================
+
+@ops.command("release-dist")
+def release_dist_cmd():
+    """Execute release cleanup tasks defined in ops_release_cleanup hooks."""
+    all_cleanup_tasks = []
+
+    linked_apps = frappe.get_all_apps(False, os.path.join(frappe.utils.get_bench_path(), "sites"))
+
+    for app_name in linked_apps:
+        all_cleanup_tasks.extend(frappe.get_hooks("ops_release_cleanup", app_name=app_name))
+
+    during_build = False if shutil.which("docker") else True
+
+    for cleanup_task in all_cleanup_tasks:
+        if "context" in cleanup_task and cleanup_task["context"] == "only_during_build" and not during_build:
+            continue
+
+        if "function" in cleanup_task:
+            function_path = cleanup_task["function"]
+            module_path, function_name = function_path.rsplit(".", 1)
+            try:
+                module = importlib.import_module(module_path)
+                function = getattr(module, function_name)
+                print(f"Executing function: {function_path}")
+                function()
+            except Exception as e:
+                print(f"Error executing function {function_path}: {e}")
+
+        elif "bash" in cleanup_task:
+            bash_command = cleanup_task["bash"]
+            print(f"Executing bash command: {bash_command}")
+            try:
+                subprocess.run(bash_command, shell=True, check=True)
+            except subprocess.CalledProcessError as e:
+                print(f"Error executing bash command: {e}")
+
+        elif "script" in cleanup_task:
+            for app_name in linked_apps:
+                script_path = os.path.join(frappe.get_app_path(app_name), cleanup_task["script"])
+                if os.path.exists(script_path):
+                    print(f"Executing script: {script_path}")
+                    try:
+                        if script_path.endswith(".py"):
+                            subprocess.run([sys.executable, script_path], check=True)
+                        else:
+                            subprocess.run(["bash", script_path], check=True)
+                    except subprocess.CalledProcessError as e:
+                        print(f"Error executing script: {e}")
+                    break
+
+
+# =============================================================================
+# Release Environment Commands
 # =============================================================================
 
 @ops.group()

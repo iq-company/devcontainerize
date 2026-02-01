@@ -74,12 +74,14 @@ site_name:
 
 _tasks:
   - "python3 \"{{ _copier_conf.src_path }}/ops/copier/patch_commands_init_py.py\" {{ app_name }} \"{{ _copier_conf.src_path }}\""
+  - "python3 \"{{ _copier_conf.src_path }}/ops/copier/patch_hooks_py.py\" {{ app_name }}"
   - "python3 \"{{ _copier_conf.src_path }}/ops/copier/update_feature_skips.py\" \"{{ _copier_conf.dst_path }}\" \"{{ _copier_conf.src_path }}/copier_features.yml\""
   - "python3 \"{{ _copier_conf.src_path }}/ops/copier/patch_pyproject_toml.py\" \"{{ _copier_conf.dst_path }}\" {{ feature_image_creation }}"
   - "python3 \"{{ _copier_conf.src_path }}/ops/copier/move_copier_answers.py\" \"{{ _copier_conf.dst_path }}\""
 
 _skip_if_exists:
   - "{{ app_name }}/commands/__init__.py"
+  - "{{ app_name }}/ops_hooks.py"
   - "ops/env/.env.template"
   - "pyproject.toml"
 
