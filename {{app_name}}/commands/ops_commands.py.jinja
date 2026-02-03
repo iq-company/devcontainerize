@@ -181,7 +181,7 @@ def build_cmd(images: bool, targets: tuple, push: bool, force: bool):
 
     if images:
         # Build images
-        cmd = ["baker", "build", "--settings", str(settings)]
+        cmd = [sys.executable, "-m", "baker_cli", "build", "--settings", str(settings)]
 
         if targets:
             cmd.extend(["--targets", ",".join(targets)])
@@ -191,7 +191,7 @@ def build_cmd(images: bool, targets: tuple, push: bool, force: bool):
             cmd.append("--force")
     else:
         # Show plan (default)
-        cmd = ["baker", "plan", "--settings", str(settings)]
+        cmd = [sys.executable, "-m", "baker_cli", "plan", "--settings", str(settings)]
 
     result = subprocess.run(cmd, cwd=app_root)
     sys.exit(result.returncode)
@@ -963,7 +963,7 @@ def stage_build(stage_name: str, push: bool, force: bool):
         click.echo(f"\n❌ Build settings not found: {settings}")
         sys.exit(1)
 
-    cmd = ["baker", "build", "--settings", str(settings)]
+    cmd = [sys.executable, "-m", "baker_cli", "build", "--settings", str(settings)]
     cmd.extend(["--targets", target])
 
     if push:
