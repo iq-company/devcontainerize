@@ -85,6 +85,7 @@ def update_cmd(dry: bool, recopy: bool):
         click.echo("🔍 Dry run - showing what would change:")
 
     click.echo(f"Running: {' '.join(cmd)}")
+    click.echo(f"\t(use --recopy to force update on repository with local changes)")
     result = subprocess.run(cmd, cwd=app_root)
     sys.exit(result.returncode)
 
