@@ -78,6 +78,7 @@ _tasks:
   - "python3 \"{{ _copier_conf.src_path }}/ops/copier/update_feature_skips.py\" \"{{ _copier_conf.dst_path }}\" \"{{ _copier_conf.src_path }}/copier_features.yml\""
   - "python3 \"{{ _copier_conf.src_path }}/ops/copier/patch_pyproject_toml.py\" \"{{ _copier_conf.dst_path }}\" {{ feature_image_creation }}"
   - "python3 \"{{ _copier_conf.src_path }}/ops/copier/move_copier_answers.py\" \"{{ _copier_conf.dst_path }}\""
+  - "python3 \"{{ _copier_conf.src_path }}/ops/copier/init_dev_stage.py\" \"{{ _copier_conf.dst_path }}\" {{ image_prefix }} {{ default_dbms }}"
 
 _skip_if_exists:
   - "{{ app_name }}/commands/__init__.py"

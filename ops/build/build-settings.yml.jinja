@@ -58,7 +58,7 @@ targets:
     image: {{ image_prefix }}-builder
     latest: true
     build_args:
-      BASE_IMAGE_SOURCE: "${depChecksum8('base')}"
+      BASE_IMAGE_SOURCE: {{ image_prefix }}-base:${depChecksum8("base")}
 
   dev:
     dockerfile: ops/build/docker/Dockerfile.dev

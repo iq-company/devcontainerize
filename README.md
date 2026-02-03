@@ -347,7 +347,7 @@ When you run `bench ops stage build <stage>`, the CLI:
 2. **Sets environment variables** that the Dockerfile picks up:
    - `FRAPPE_REF` - Git reference for Frappe (branch, tag, or commit)
    - `CUSTOM_APPS` - Comma-separated list of additional apps
-   - `PRODUCTION_BUILD` - `true` for release targets, `false` for dev
+   - `PRODUCTION_BUILD` - `true` for release targets (yarn and pips will only install production requirements), `false` otherwise
 3. **Calls baker-cli** which runs `docker buildx bake`
 4. **Dockerfile.dev** calls `setup_bench_apps.py` with these values
 
