@@ -25,10 +25,10 @@ echo "  Python: $PYTHON_VENV_VERSION"
 # INSERT_LINE="import {{ app_name }}.monkey_patches.inject_logger"
 # sed -i "/import sys/a $INSERT_LINE" "$BENCH_DIR/env/lib/$PYTHON_VENV_VERSION/site-packages/bench/cli.py"
 
-# Example: Customize branding
-# BRAND_NAME="${IQ_BRAND_NAME:-{{ project_name }}}"
-# sed -i "s/__(\"Starting Frappe ...\")/__(\"Starting $BRAND_NAME ...\")/" \
-#     "$BENCH_DIR/apps/frappe/frappe/desk/page/setup_wizard/setup_wizard.js"
+# Customize branding in Frappe UI
+BRAND_NAME="{{ project_name }}"
+sed -i "s/__(\"Starting Frappe ...\")/__(\"Starting $BRAND_NAME ...\")/" \
+    "$BENCH_DIR/apps/frappe/frappe/desk/page/setup_wizard/setup_wizard.js"
 
 # Example: Install optional NLP models
 # if [ "${ENABLE_NLP:-false}" = "true" ]; then
