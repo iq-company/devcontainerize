@@ -615,6 +615,8 @@ def stage():
 @click.option("-v", "--verbose", is_flag=True, help="Show more details")
 def stage_ls(verbose: bool):
     """List all defined stages."""
+    app_root = get_app_root()
+    compose_dir = app_root / "ops" / "compose"
     config = load_stages_config()
     stages = config.get("stages", {})
 
@@ -624,14 +626,24 @@ def stage_ls(verbose: bool):
 
     click.echo("📦 Stages:")
     all_issues = []
+    missing_envs = []
+
     for name, raw_stage in stages.items():
         resolved = get_stage_config(config, name)
         extends = f" (extends: {raw_stage['extends']})" if "extends" in raw_stage else ""
         target = resolved.get("target", "release")
-        click.echo(f"  • {name}{extends} → {target}")
+
+        # Check if env file exists
+        env_filename = resolved.get("env_file", ".env")
+        env_file = compose_dir / env_filename
+        env_status = "✓" if env_file.exists() else "✗"
+
+        click.echo(f"  • {name}{extends} → {target}  [{env_status} {env_filename}]")
+
+        if not env_file.exists():
+            missing_envs.append((name, env_filename))
 
         if verbose:
-            click.echo(f"      env: {resolved.get('env_file', '.env')}")
             profiles = resolved.get("profiles", [])
             if profiles:
                 click.echo(f"      profiles: {', '.join(profiles)}")
@@ -643,6 +655,12 @@ def stage_ls(verbose: bool):
 
         # Collect validation issues
         all_issues.extend(validate_stage_config(config, name))
+
+    if missing_envs:
+        click.echo("")
+        click.echo("⚠️  Missing .env files:")
+        for stage_name, env_filename in missing_envs:
+            click.echo(f"   • {env_filename} → Run: bench ops stage env {stage_name}")
 
     if all_issues:
         click.echo("")
@@ -780,6 +798,54 @@ def stage_clean(stage_name: str, volumes: bool):
     click.echo(f"🧹 Cleaning stage '{stage_name}'...")
     result = subprocess.run(cmd, cwd=compose_dir)
     sys.exit(result.returncode)
+
+
+@stage.command("env")
+@click.argument("stage_name")
+@click.option("-f", "--force", is_flag=True, help="Overwrite existing .env file")
+def stage_env(stage_name: str, force: bool):
+    """Create .env file for a stage."""
+    config = load_stages_config()
+    stage = get_stage_config(config, stage_name)
+    app_root = get_app_root()
+    compose_dir = app_root / "ops" / "compose"
+
+    env_filename = stage.get("env_file", f".env.{stage_name}")
+    env_file = compose_dir / env_filename
+
+    if env_file.exists() and not force:
+        click.echo(f"⚠️  {env_filename} already exists. Use -f to overwrite.")
+        sys.exit(1)
+
+    # Use init_env_files script to generate env with unique credentials
+    init_script = app_root / "ops" / "scripts" / "devcontainer" / "init_env_files"
+
+    if not init_script.exists():
+        click.echo(f"❌ Script not found: {init_script}")
+        sys.exit(1)
+
+    # Delete existing file if force is set (so script creates fresh one)
+    if env_file.exists() and force:
+        env_file.unlink()
+
+    # Determine suffix from env_filename (e.g., ".env.staging" -> ".staging")
+    if env_filename.startswith(".env"):
+        suffix = env_filename[4:]  # Remove ".env" prefix
+    else:
+        suffix = ""
+
+    click.echo(f"🔧 Creating {env_filename}...")
+    result = subprocess.run(
+        ["bash", str(init_script)],
+        cwd=app_root,
+        env={**os.environ, "ENV_FILE_SUFFIX": suffix}
+    )
+
+    if result.returncode == 0 and env_file.exists():
+        click.echo(f"✅ Created {env_filename} with fresh credentials")
+    else:
+        click.echo(f"❌ Failed to create {env_filename}")
+        sys.exit(1)
 
 
 @stage.command("build")

@@ -3,7 +3,7 @@
 # Cross-platform script to create a single .env file if it doesn't exist
 # This script is called by VSCode devcontainer initializeCommand
 
-set -ex # Added -x for debugging
+set -e
 
 # Determine ops directory
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
