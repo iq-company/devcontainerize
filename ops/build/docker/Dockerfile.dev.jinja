@@ -16,8 +16,7 @@ ARG PRODUCTION_BUILD=false
 ARG FRAPPE_REF={{ frappe_ref }}
 ARG FRAPPE_PATH=https://github.com/frappe/frappe
 
-
-{%- if default_dbms == 'postgres' -%}
+{% if default_dbms == 'postgres' %}
 # copies compiled psql and libpq.so, libpq.so.5, libpq.so.5.16 from builder stage
 COPY --from=builder /tmp/psql/bin/psql /usr/local/bin/psql
 COPY --from=builder /tmp/postgresql/src/interfaces/libpq/libpq.so* /lib/x86_64-linux-gnu/
