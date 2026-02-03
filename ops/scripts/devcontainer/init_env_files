@@ -14,6 +14,13 @@ OPS_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 ENV_SUFFIX="${ENV_FILE_SUFFIX:-}"
 TARGET_ENV_FILE="$OPS_DIR/compose/.env${ENV_SUFFIX}"
 
+# Extract stage name from suffix (e.g., ".staging" -> "staging", "" -> "dev")
+if [ -n "$ENV_SUFFIX" ]; then
+	STAGE_NAME="${ENV_SUFFIX#.}"  # Remove leading dot
+else
+	STAGE_NAME="dev"
+fi
+
 # Template files (note: "env." prefix instead of ".env" to avoid .gitignore issues)
 TEMPLATE_FILE="$OPS_DIR/env-templates/env.template"
 
@@ -81,6 +88,7 @@ else
 	cp "$TEMPLATE_FILE" "$TARGET_ENV_FILE"
 
 	# General placeholders
+	sed -i "s/{{stage}}/$STAGE_NAME/g" "$TARGET_ENV_FILE"
 	sed -i "s/{{random_lower}}/$RANDOM_LOWER/g" "$TARGET_ENV_FILE"
 	sed -i "s|{{vscode_settings_path}}|$VSCODE_SETTINGS_PATH|g" "$TARGET_ENV_FILE"
 	sed -i "s/{{uid}}/$CURRENT_UID/g" "$TARGET_ENV_FILE"
@@ -99,9 +107,11 @@ else
 	# --- Append DBMS-specific addon if it exists ---
 	ADDON_FILE="$OPS_DIR/env-templates/env.$DBMS.addon.template"
 	if [ -f "$ADDON_FILE" ]; then
-		echo -e "
-# --- Appending $DBMS-specific settings ---" >> "$TARGET_ENV_FILE"
-		cat "$ADDON_FILE" >> "$TARGET_ENV_FILE"
+		echo -e "\n# --- Appending $DBMS-specific settings ---" >> "$TARGET_ENV_FILE"
+		# Append addon and replace placeholders
+		ADDON_CONTENT=$(cat "$ADDON_FILE")
+		ADDON_CONTENT="${ADDON_CONTENT//\{\{stage\}\}/$STAGE_NAME}"
+		echo "$ADDON_CONTENT" >> "$TARGET_ENV_FILE"
 	fi
 
 	echo "Environment file '$TARGET_ENV_FILE' created successfully with DBMS: $DBMS."

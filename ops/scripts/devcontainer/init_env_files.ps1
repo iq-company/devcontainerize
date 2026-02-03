@@ -13,6 +13,13 @@ $opsDir = Join-Path $scriptDir "../.."
 $envSuffix = if ($env:ENV_FILE_SUFFIX) { $env:ENV_FILE_SUFFIX } else { "" }
 $targetEnvFile = Join-Path $opsDir "compose/.env$envSuffix"
 
+# Extract stage name from suffix (e.g., ".staging" -> "staging", "" -> "dev")
+if ($envSuffix) {
+    $stageName = $envSuffix.TrimStart('.')
+} else {
+    $stageName = "dev"
+}
+
 # Template files (note: "env." prefix instead of ".env" to avoid .gitignore issues)
 $templateFile = Join-Path $opsDir "env-templates/env.template"
 
@@ -96,6 +103,7 @@ if (Test-Path $targetEnvFile) {
     $content = Get-Content $targetEnvFile -Raw
 
     # General placeholders
+    $content = $content -replace '\{\{stage\}\}', $stageName
     $content = $content -replace '\{\{random_lower\}\}', $randomLower
     $content = $content -replace '\{\{vscode_settings_path\}\}', $vscodeSettingsPath
     $content = $content -replace '\{\{uid\}\}', $currentUid
@@ -117,7 +125,10 @@ if (Test-Path $targetEnvFile) {
     $addonFile = Join-Path $opsDir "env-templates/env.$dbms.addon.template"
     if (Test-Path $addonFile) {
         Add-Content -Path $targetEnvFile -Value "`n# --- Appending $dbms-specific settings ---"
-        Add-Content -Path $targetEnvFile -Value (Get-Content $addonFile)
+        # Append addon and replace placeholders
+        $addonContent = Get-Content $addonFile -Raw
+        $addonContent = $addonContent -replace '\{\{stage\}\}', $stageName
+        Add-Content -Path $targetEnvFile -Value $addonContent
     }
 
     Write-Host "Environment file '$targetEnvFile' created successfully with DBMS: $dbms."

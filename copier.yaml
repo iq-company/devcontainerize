@@ -83,7 +83,7 @@ _skip_if_exists:
   - "{{ app_name }}/commands/__init__.py"
   - "{{ app_name }}/ops_hooks.py"
   - "ops/build/stages.yml"
-  - "ops/env/.env.template"
+  - "ops/env-templates/env.template"
   - "pyproject.toml"
 
 feature_devcontainer:
