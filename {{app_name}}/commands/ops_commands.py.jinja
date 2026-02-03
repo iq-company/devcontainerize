@@ -590,16 +590,37 @@ def get_stages_that_extend(config: dict, stage_name: str) -> list[str]:
 def get_stage_image_name(config: dict, stage_name: str, image_prefix: str = "{{ image_prefix }}") -> str:
     """Get the full image name for a stage.
 
-    Image name is derived from: {image_prefix}-{target}{suffix}
-    The target name directly maps to the image name suffix.
+    If `image` is set in stage config, returns that (for pulling from registry).
+    Otherwise, derives from: {image_prefix}-{target}{suffix}
     """
     stage = get_stage_config(config, stage_name)
+
+    # If explicit image is configured, use that (registry pull)
+    if "image" in stage:
+        return stage["image"]
+
+    # Otherwise derive from target
     target = stage.get("target", "release")
     suffix = stage.get("image_suffix", "")
 
     # Image name follows pattern: {prefix}-{target}{suffix}
     # e.g., iq-dev, iq-release, iq-release-alpine, iq-release-prod
     return f"{image_prefix}-{target}{suffix}"
+
+
+def check_image_exists(image_name: str) -> bool:
+    """Check if a Docker image exists locally."""
+    result = subprocess.run(
+        ["docker", "image", "inspect", image_name],
+        capture_output=True
+    )
+    return result.returncode == 0
+
+
+def stage_has_registry_image(config: dict, stage_name: str) -> bool:
+    """Check if stage has an explicit image configured (registry pull)."""
+    stage = get_stage_config(config, stage_name)
+    return "image" in stage
 
 
 # =============================================================================
@@ -683,9 +704,16 @@ def stage_show(stage_name: str):
     click.echo(f"   env_file: {stage.get('env_file', '.env')}")
     click.echo(f"   profiles: {', '.join(stage.get('profiles', [])) or '(none)'}")
 
-    suffix = stage.get("image_suffix", "")
+    # Image information
     image_name = get_stage_image_name(config, stage_name)
-    click.echo(f"   image: {image_name}")
+    has_registry = stage_has_registry_image(config, stage_name)
+    image_exists = check_image_exists(image_name)
+
+    image_source = "registry" if has_registry else "local"
+    image_status = "✓" if image_exists else "✗"
+    click.echo(f"   image: {image_name} ({image_source}) [{image_status}]")
+
+    suffix = stage.get("image_suffix", "")
     if suffix:
         click.echo(f"   image_suffix: {suffix}")
 
@@ -714,6 +742,21 @@ def stage_run(stage_name: str, detach: bool, foreground: bool):
     app_root = get_app_root()
     compose_dir = app_root / "ops" / "compose"
 
+    # Check image availability
+    image_name = get_stage_image_name(config, stage_name)
+    has_registry = stage_has_registry_image(config, stage_name)
+    image_exists = check_image_exists(image_name)
+
+    if not image_exists and not has_registry:
+        click.echo(f"⚠️  Image '{image_name}' not found locally.")
+        click.echo(f"   Either build it first:")
+        click.echo(f"     bench ops stage build {stage_name}")
+        click.echo(f"   Or configure a pull registry in ops/build/stages.yml:")
+        click.echo(f"     image: ghcr.io/your-org/your-repo/{image_name}:latest")
+        click.echo("")
+        if not click.confirm("Try to continue anyway?", default=False):
+            sys.exit(1)
+
     # Determine env file
     env_file = compose_dir / stage.get("env_file", ".env")
 
@@ -737,6 +780,7 @@ def stage_run(stage_name: str, detach: bool, foreground: bool):
         cmd.append("-d")
 
     click.echo(f"🚀 Starting stage '{stage_name}'...")
+    click.echo(f"   Image: {image_name}{' (from registry)' if has_registry else ' (local)'}")
     click.echo(f"   Compose files: {', '.join(Path(f).name for f in compose_files)}")
     click.echo(f"   Env file: {env_file.name if env_file.exists() else '(none)'}")
     click.echo(f"   Profiles: {', '.join(stage.get('profiles', [])) or '(none)'}")

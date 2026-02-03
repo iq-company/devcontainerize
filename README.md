@@ -301,18 +301,20 @@ stages:
     target: dev               # baker-cli target to use
     env_file: .env
     profiles: [db, redis]
+    # image: ghcr.io/org/repo/my_app-dev:latest  # Optional: pull from registry
 
   # Staging uses same apps as dev → can use standard release image
   staging:
     target: release
     env_file: .env.staging
     profiles: []              # External DB/Redis
+    # image: ghcr.io/org/repo/my_app-release:latest  # Pull pre-built image
 
   # Prod pins specific versions → needs separate image build
   prod:
     extends: staging
     env_file: .env.prod
-    image_suffix: -prod       # REQUIRED: creates my_app-release-prod
+    image_suffix: -prod       # REQUIRED because of app override: creates my_app-release-prod
     apps:                     # Override app refs
       - name: frappe
         ref: v15.47.0
