@@ -12,6 +12,7 @@ A `copier`-based template for creating devcontainerized Frappe app projects with
 - [CLI Commands](#cli-commands)
 - [Devcontainer](#devcontainer)
 - [Environment Files](#environment-files)
+- [Optional Services (Compose Profiles)](#optional-services-compose-profiles)
 - [Keeping Updated](#keeping-updated)
 - [Troubleshooting](#troubleshooting)
 
@@ -153,11 +154,18 @@ app/
 │   │   ├── compose.postgres.yml
 │   │   ├── compose.mariadb.yml
 │   │   ├── compose.release.yml
-│   │   └── .env                   # Generated (not in Git)
-│   ├── env/                       # Environment templates
-│   │   ├── .env.template
-│   │   └── .env.*.addon.template
+│   │   ├── .env                   # ⚠️ Generated, gitignored (via ops/.gitignore)
+│   │   ├── .env.dev               # ⚠️ Generated, gitignored
+│   │   ├── .env.staging           # ⚠️ Generated, gitignored
+│   │   └── .env.prod              # ⚠️ Generated, gitignored
+│   ├── env-templates/             # Environment templates
+│   │   ├── env.shared.template    # → .env (shared defaults)
+│   │   ├── env.template           # → .env.STAGE (stage-specific)
+│   │   ├── env.dev.addon.template # → appended to .env.dev only
+│   │   └── env.*.addon.template   # DBMS-specific additions
 │   ├── scripts/
+│   │   ├── common/                # Shared utilities
+│   │   │   └── load_env.sh        # Load .env + .env.STAGE cascade
 │   │   ├── devcontainer/          # Host-side devcontainer scripts
 │   │   │   ├── init_env_files
 │   │   │   ├── init_env_files.ps1
@@ -168,12 +176,10 @@ app/
 │   │   │   ├── check_iq_keybindings.py
 │   │   │   ├── install_iq_keybindings.py
 │   │   │   └── info_bench_start.sh
-│   │   ├── release/               # Host-side release scripts
-│   │   │   ├── run_release_helper.sh
-│   │   │   ├── stop_release_helper.sh
-│   │   │   └── clean_release_helper.sh
-│   │   └── common/                # Common utilities
-│   │       └── manage_app.py
+│   │   └── release/               # Host-side release scripts
+│   │       ├── run_release_helper.sh
+│   │       ├── stop_release_helper.sh
+│   │       └── clean_release_helper.sh
 │   └── copier/                    # Copier tasks (not copied to target)
 │       ├── patch_commands_init_py.py
 │       ├── patch_pyproject_toml.py
@@ -241,6 +247,7 @@ bench ops stage stop <name>     # Stop environment for stage
 bench ops stage clean <name>    # Clean up stage containers
 bench ops stage clean <name> -v # Also remove volumes
 bench ops stage build <name>    # Build images for stage
+bench ops stage env <name>      # Generate .env file for stage
 bench ops stage add <name>      # Add a new stage
 bench ops stage rm <name>       # Remove a stage
 
@@ -299,7 +306,7 @@ stages:
   # Development stage - uses dev target
   dev:
     target: dev               # baker-cli target to use
-    env_file: .env
+    env_file: .env.dev        # Stage-specific env (loads after shared .env)
     profiles: [db, redis]
     # image: ghcr.io/org/repo/my_app-dev:latest  # Optional: pull from registry
 
@@ -427,47 +434,162 @@ baker rm --targets dev          # Remove local images
 
 ## Environment Files
 
+Environment configuration uses a **shared + stage** pattern:
+
+```
+Load Order: .env (shared) → .env.STAGE (overrides)
+```
+
+### File Structure
+
+```
+ops/compose/
+├── .env          # Shared defaults (all stages)
+├── .env.dev      # Dev stage overrides
+├── .env.staging  # Staging stage overrides
+└── .env.prod     # Prod stage overrides
+```
+
+### Shared vs Stage-Specific
+
+| In `.env` (shared) | In `.env.STAGE` (stage-specific) |
+|--------------------|----------------------------------|
+| `IQ_IMAGE`, `IQ_IMAGE_TAG` | `COMPOSE_PROJECT_NAME` (unique per stage) |
+| `IQ_SITE_NAME`, `IQ_BRAND_NAME` | `DBMS`, `DB_HOST`, `DB_PORT` |
+| `REDIS_*`, `SOCKETIO_PORT` | `DB_*` credentials |
+| `NGINX_PORT`, `WEBDB_PORT` (defaults) | `IQ_ADMIN_PW` |
+| `COMPOSE_PROFILES` (defaults) | `OPENID_*` settings |
+| | `HOST_UID`, `HOST_GID` (dev only) |
+
+Stage-specific files can **override** any shared value:
+```bash
+# .env (shared)
+COMPOSE_PROFILES=
+
+# .env.dev (override for dev stage)
+COMPOSE_PROFILES=ocr,monitoring
+```
+
 ### Templates (committed to Git)
 
-| File | Purpose |
-|------|---------|
-| `ops/env/.env.template` | Main configuration template |
-| `ops/env/.env.*.addon.template` | DBMS-specific additions |
-
-### Generated Files (not in Git)
-
-| File | Purpose |
-|------|---------|
-| `ops/compose/.env` | Full runtime configuration |
-| `.devcontainer/.env` | Minimal config for starting devcontainer from host |
+| File | Generates | Purpose |
+|------|-----------|---------|
+| `ops/env-templates/env.shared.template` | `.env` | Shared defaults |
+| `ops/env-templates/env.template` | `.env.STAGE` | Stage-specific config |
+| `ops/env-templates/env.dev.addon.template` | (appended to `.env.dev`) | Dev-only vars |
+| `ops/env-templates/env.*.addon.template` | (appended) | DBMS-specific additions |
 
 ### Initialization
 
 ```bash
-# Initialize environment for PostgreSQL
-./ops/scripts/devcontainer/init_env_files postgres
+# Create env files for a stage
+bench ops stage env dev        # Creates .env + .env.dev
+bench ops stage env staging    # Creates .env + .env.staging
 
-# Or for MariaDB
-./ops/scripts/devcontainer/init_env_files mariadb
+# Or directly via script
+./ops/scripts/devcontainer/init_env_files postgres           # Default: .env.dev
+ENV_FILE_SUFFIX=.staging ./ops/scripts/devcontainer/init_env_files postgres
+```
 
-# Or for SQLite
-./ops/scripts/devcontainer/init_env_files sqlite
+### Loading Environment in Scripts
 
-# Using environment variable
-DBMS=postgres ./ops/scripts/devcontainer/init_env_files
+Use the helper script to load both files:
+
+```bash
+# In shell scripts
+source ./ops/scripts/common/load_env.sh           # Loads .env + .env.dev
+source ./ops/scripts/common/load_env.sh staging   # Loads .env + .env.staging
+
+# Variables are then directly available
+echo $COMPOSE_PROJECT_NAME
+echo $DBMS
 ```
 
 ### Key Variables
 
-| Variable | Description |
-|----------|-------------|
-| `DBMS` | Database type (postgres, mariadb, sqlite) |
-| `DB_HOST` | Database host |
-| `DB_PORT` | Database port |
-| `DB_ROOT_PASSWORD` | Database root password |
-| `DB_SUPER_USER` | Super user for DDL operations |
-| `IQ_SITE_NAME` | Frappe site name |
-| `NGINX_PORT` | Port for web access (default: 8010) |
+| Variable | Location | Description |
+|----------|----------|-------------|
+| `IQ_IMAGE` | shared | Docker image name |
+| `IQ_IMAGE_TAG` | shared | Docker image tag |
+| `IQ_SITE_NAME` | shared | Frappe site name |
+| `DBMS` | stage | Database type (postgres, mariadb, sqlite) |
+| `DB_HOST` | stage | Database host |
+| `DB_PORT` | stage | Database port |
+| `DB_ROOT_PASSWORD` | stage | Database root password |
+| `DB_SUPER_USER` | stage | Super user for DDL operations |
+| `COMPOSE_PROJECT_NAME` | stage | Unique per stage |
+| `NGINX_PORT` | shared (override in stage) | Port for web access |
+| `COMPOSE_PROFILES` | shared (override in stage) | Active profiles |
+
+---
+
+## Optional Services (Compose Profiles)
+
+Docker Compose profiles allow services to be conditionally started.
+
+### How It Works
+
+1. **Define a service with a profile** in a compose file:
+   ```yaml
+   # ops/compose/compose.with-ocr-ext.yml
+   services:
+     ocr-rt:
+       profiles: [ocr]  # Only starts when 'ocr' profile is active
+       build: ../build/resources/ocr-extensions
+   ```
+
+2. **Include the file** in `compose.base.yml`:
+   ```yaml
+   include:
+     - ./compose.with-ocr-ext.yml
+     - ./compose.${DBMS:-postgres}.yml
+   ```
+
+3. **Activate the profile** via environment:
+   ```bash
+   # In .env or .env.STAGE
+   COMPOSE_PROFILES=ocr
+
+   # Multiple profiles
+   COMPOSE_PROFILES=ocr,monitoring,debug
+   ```
+
+### Per-Stage Profiles
+
+Different stages can have different profiles:
+
+```bash
+# .env (shared) - no profiles by default
+COMPOSE_PROFILES=
+
+# .env.dev - dev gets OCR and monitoring
+COMPOSE_PROFILES=ocr,monitoring
+
+# .env.prod - prod only gets monitoring
+COMPOSE_PROFILES=monitoring
+```
+
+### Creating Optional Services
+
+See `ops/compose/compose.with-optional-service.example.yml` for a template:
+
+```yaml
+services:
+  my-service:
+    profiles: [myprofile]
+    image: alpine:latest
+    # build: ../build/resources/my_service/
+```
+
+### Starting with Profiles
+
+```bash
+# Via bench ops (reads COMPOSE_PROFILES from .env)
+bench ops stage run dev
+
+# Via docker compose directly
+docker compose --profile ocr up
+```
 
 ---
 

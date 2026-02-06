@@ -25,6 +25,7 @@ apps:
 #   - target: baker-cli build target (REQUIRED, e.g., dev, release, release-alpine)
 #   - env_file: .env file to use (relative to ops/compose/)
 #   - profiles: compose profiles to activate [db, redis, ...]
+#               These are COMBINED with COMPOSE_PROFILES from .env (not overwritten)
 #   - extends: inherit from another stage (inherits target if not overridden)
 #
 # Image source (where to pull the image from):
@@ -39,11 +40,11 @@ apps:
 # The relationship between stages and build targets:
 #
 #   ┌─────────────────────────────────────────────────────────────────────┐
-#   │ BUILD TARGETS (baker-cli)         │ STAGES (runtime)               │
+#   │ BUILD TARGETS (baker-cli)         │ STAGES (runtime)                │
 #   ├───────────────────────────────────┼─────────────────────────────────┤
-#   │ dev        → Development image    │ dev     → Local development    │
-#   │ release    → Production image     │ staging → Staging environment  │
-#   │ release-alpine → Minimal image    │ prod    → Production           │
+#   │ dev        → Development image    │ dev     → Local development     │
+#   │ release    → Production image     │ staging → Staging environment   │
+#   │ release-alpine → Minimal image    │ prod    → Production            │
 #   └───────────────────────────────────┴─────────────────────────────────┘
 #
 # IMPORTANT: If a stage customizes `apps`, it needs its own image!
@@ -56,12 +57,12 @@ stages:
   dev:
     target: dev
     env_file: .env.dev
-    profiles:
+    profiles:                           # These are combined with COMPOSE_PROFILES from .env
       - db
       - redis
     # image: ghcr.io/your-org/{{ app_name }}/{{ image_prefix }}-dev:latest
     # ↑ Uncomment to pull pre-built image from registry (for new team members).
-    #   Without this, the image must be built locally: bench ops stage build dev
+    #   Without this, the image ({{ image_prefix }}-dev) must be built locally using: bench ops stage build dev
 
 # =============================================================================
 # Example additional stages (uncomment and customize)
