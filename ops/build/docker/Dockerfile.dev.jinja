@@ -57,7 +57,9 @@ RUN set -x; \
 	--home-dir /home/{{ image_user }} \
 	--github-user "${GITHUB_USER}" \
 	--github-token "${GITHUB_TOKEN}" \
-	$([ "${PRODUCTION_BUILD}" = "true" ] && echo "--production");
+	$([ "${PRODUCTION_BUILD}" = "true" ] && echo "--production"); \
+	# Clean up build caches in same layer to reduce image size (~1.4GB) \
+	rm -rf ~/.cache/yarn ~/.cache/uv ~/.cache/pip ~/.cache/huggingface /tmp/*
 
 ##
 
@@ -94,13 +96,6 @@ RUN set -e; \
 	echo "docker-patches.sh might not have run completely"; \
 	exit 1; \
 	fi
-
-# Clean up build caches to reduce image size (~1.4GB savings)
-RUN rm -rf /home/${IMAGE_USER}/.cache/yarn \
-	/home/${IMAGE_USER}/.cache/uv \
-	/home/${IMAGE_USER}/.cache/pip \
-	/home/${IMAGE_USER}/.cache/huggingface \
-	/tmp/*
 
 {% if feature_mkdocs %}
 # ##############################
