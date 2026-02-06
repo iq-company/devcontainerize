@@ -1,44 +1,24 @@
 #!/bin/bash
 
-# This script is a helper for the 'make clean-release' target.
-# It stops and removes docker compose services, volumes, and networks,
-# respecting the .env.release file if it exists.
+# Clean release environment (containers, volumes, networks)
+# Usage: ./clean_release_helper.sh [stage_name]
 
 set -e
 
-# Define potential .env file paths
-DEFAULT_ENV_FILE="./ops/compose/.env"
-RELEASE_ENV_FILE="./ops/compose/.env.release"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+STAGE_NAME="${1:-dev}"
 
-# Determine which .env file to use as the source of truth
-ENV_FILE_PATH="$DEFAULT_ENV_FILE"
-if [ -f "$RELEASE_ENV_FILE" ]; then
-    echo "Using release-specific environment file: $RELEASE_ENV_FILE"
-    ENV_FILE_PATH="$RELEASE_ENV_FILE"
-else
-    echo "Using default environment file: $DEFAULT_ENV_FILE"
-fi
+# Load env vars via cascade (shared + stage)
+source "$SCRIPT_DIR/../common/load_env.sh" "$STAGE_NAME"
 
-if [ ! -f "$ENV_FILE_PATH" ]; then
-    echo "Warning: Environment file not found at $ENV_FILE_PATH. Cannot determine project name. Attempting to clean without it."
-    docker compose --project-directory ./ops/compose down --remove-orphans
-    exit 0
-fi
-
-# Determine PROJECT_NAME from the chosen .env file
-PROJECT_NAME=$(awk -F= '/^COMPOSE_PROJECT_NAME=/ {print $2}' "$ENV_FILE_PATH" | xargs)
-
-echo "Stopping and removing containers for project: $PROJECT_NAME..."
-
-# Always run down without --volumes first to stop containers
-docker compose -p "$PROJECT_NAME" --project-directory ./ops/compose down --remove-orphans
-
-# Ask the user if they also want to remove the volumes
-read -p "Do you also want to remove the persistent volumes (THIS WILL DELETE THE DATABASE)? (y/N) " -n 1 -r
+echo "Cleaning project: $COMPOSE_PROJECT_NAME..."
+echo "This will remove containers, volumes, and networks."
+read -p "Are you sure? (y/N) " -n 1 -r
 echo
-if [[ $REPLY =~ ^[Yy]$ ]]; then
-    echo "Removing volumes for project: $PROJECT_NAME..."
-    docker compose -p "$PROJECT_NAME" --project-directory ./ops/compose down --volumes --remove-orphans
-fi
 
-echo "Cleanup complete."
+if [[ $REPLY =~ ^[Yy]$ ]]; then
+    docker compose -p "$COMPOSE_PROJECT_NAME" down --volumes --remove-orphans
+    echo "✅ Cleaned."
+else
+    echo "Cancelled."
+fi

@@ -758,7 +758,8 @@ def stage_run(stage_name: str, detach: bool, foreground: bool):
             sys.exit(1)
 
     # Determine env file
-    env_file = compose_dir / stage.get("env_file", ".env")
+    env_file_name = stage.get("env_file", ".env.dev")
+    env_file = compose_dir / env_file_name
 
     # Build compose command
     compose_files = get_compose_files(stage)
@@ -786,7 +787,11 @@ def stage_run(stage_name: str, detach: bool, foreground: bool):
     click.echo(f"   Profiles: {', '.join(stage.get('profiles', [])) or '(none)'}")
     click.echo(f"\n   Running: {' '.join(cmd)}\n")
 
-    result = subprocess.run(cmd, cwd=compose_dir)
+    # Set STAGE_ENV_FILE for compose files that use it for env_file: directive
+    env = os.environ.copy()
+    env["STAGE_ENV_FILE"] = env_file_name
+
+    result = subprocess.run(cmd, cwd=compose_dir, env=env)
     sys.exit(result.returncode)
 
 
@@ -798,6 +803,7 @@ def stage_stop(stage_name: str):
     stage = get_stage_config(config, stage_name)
     app_root = get_app_root()
     compose_dir = app_root / "ops" / "compose"
+    env_file_name = stage.get("env_file", ".env.dev")
 
     compose_files = get_compose_files(stage)
     cmd = ["docker", "compose"]
@@ -812,7 +818,9 @@ def stage_stop(stage_name: str):
     cmd.append("stop")
 
     click.echo(f"🛑 Stopping stage '{stage_name}'...")
-    result = subprocess.run(cmd, cwd=compose_dir)
+    env = os.environ.copy()
+    env["STAGE_ENV_FILE"] = env_file_name
+    result = subprocess.run(cmd, cwd=compose_dir, env=env)
     sys.exit(result.returncode)
 
 
@@ -825,6 +833,7 @@ def stage_clean(stage_name: str, volumes: bool):
     stage = get_stage_config(config, stage_name)
     app_root = get_app_root()
     compose_dir = app_root / "ops" / "compose"
+    env_file_name = stage.get("env_file", ".env.dev")
 
     compose_files = get_compose_files(stage)
     cmd = ["docker", "compose"]
@@ -841,7 +850,9 @@ def stage_clean(stage_name: str, volumes: bool):
         cmd.append("-v")
 
     click.echo(f"🧹 Cleaning stage '{stage_name}'...")
-    result = subprocess.run(cmd, cwd=compose_dir)
+    env = os.environ.copy()
+    env["STAGE_ENV_FILE"] = env_file_name
+    result = subprocess.run(cmd, cwd=compose_dir, env=env)
     sys.exit(result.returncode)
 
 

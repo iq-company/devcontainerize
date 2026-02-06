@@ -55,7 +55,7 @@ stages:
   # Uses dev image with local DB and Redis services
   dev:
     target: dev
-    env_file: .env
+    env_file: .env.dev
     profiles:
       - db
       - redis

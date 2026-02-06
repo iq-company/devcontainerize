@@ -1,8 +1,9 @@
 #!/bin/bash
 set -e
 
-# Load vars
-source ops/compose/.env
+# Load env vars (shared + dev stage)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/../common/load_env.sh"
 
 VOLUME_NAME="${COMPOSE_PROJECT_NAME}_apps"
 IMAGE_TAG="${IQ_IMAGE}:${IQ_IMAGE_TAG}"

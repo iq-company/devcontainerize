@@ -18,4 +18,4 @@ services:
       - sample
     image: alpine:latest
     command: echo "Sample service running"
-    # build: ../dockerfiles/sample_extensions  # Or build from Dockerfile
+    # build: ../build/resources/sample_extensions  # Or build from Dockerfile in ops/build/docker/

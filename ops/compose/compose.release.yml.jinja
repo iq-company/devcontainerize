@@ -1,4 +1,5 @@
 # This compose file extends the base compose.yml for the "release" scenario.
+# .env contains shared defaults, STAGE_ENV_FILE (set by CLI) contains stage-specific overrides
 
 x-backend-defaults: &backend_defaults
   <<: *ddl_override
@@ -8,6 +9,7 @@ x-backend-defaults: &backend_defaults
     - sites:/home/{{ image_user }}/bench/sites
   env_file:
     - ./.env
+    - ./${STAGE_ENV_FILE:-.env.dev}
   depends_on:
     init:
       condition: service_completed_successfully

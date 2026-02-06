@@ -1,32 +1,97 @@
 #!/bin/bash
 
-# Cross-platform script to create a single .env file if it doesn't exist
-# This script is called by VSCode devcontainer initializeCommand
+# Script to create .env (shared) and .env.STAGE files
+# Called by VSCode devcontainer initializeCommand or bench ops stage env
 
 set -e
 
 # Determine ops directory
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OPS_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
+COMPOSE_DIR="$OPS_DIR/compose"
+TEMPLATES_DIR="$OPS_DIR/env-templates"
+
+# =============================================================================
+# Interpolation function - replaces all known placeholders in a string
+# Usage: result=$(interpolate_template "$content")
+# =============================================================================
+interpolate_template() {
+	local content="$1"
+
+	# Stage and project
+	content="${content//\{\{stage\}\}/$STAGE_NAME}"
+	content="${content//\{\{random_lower\}\}/$RANDOM_LOWER}"
+
+	# Passwords and credentials
+	content="${content//\{\{random_password\}\}/$IQ_ADMIN_PW_VAL}"
+	content="${content//\{\{db_super_user\}\}/$DB_SUPER_USER_VAL}"
+	content="${content//\{\{db_super_user_pw\}\}/$DB_SUPER_USER_PW_VAL}"
+	content="${content//\{\{db_root_password\}\}/$DB_ROOT_PASSWORD_VAL}"
+	content="${content//\{\{db_password\}\}/$DB_PASSWORD_VAL}"
+
+	# Database settings
+	content="${content//\{\{dbms\}\}/$DBMS}"
+	content="${content//\{\{db_host\}\}/$DB_HOST_VAL}"
+	content="${content//\{\{db_port\}\}/$DB_PORT_VAL}"
+
+	# Dev-specific (only set for dev stage)
+	content="${content//\{\{uid\}\}/$CURRENT_UID}"
+	content="${content//\{\{gid\}\}/$CURRENT_GID}"
+	content="${content//\{\{vscode_settings_path\}\}/$VSCODE_SETTINGS_PATH}"
+
+	echo "$content"
+}
+
+# Interpolate a template file and write to target
+# Usage: interpolate_file "source_template" "target_file"
+interpolate_file() {
+	local source="$1"
+	local target="$2"
+
+	if [ ! -f "$source" ]; then
+		echo "Warning: Template not found: $source"
+		return 1
+	fi
+
+	local content
+	content=$(cat "$source")
+	content=$(interpolate_template "$content")
+	echo "$content" > "$target"
+}
+
+# Append interpolated template content to a file
+# Usage: append_interpolated "source_template" "target_file"
+append_interpolated() {
+	local source="$1"
+	local target="$2"
+
+	if [ ! -f "$source" ]; then
+		return 0  # Silently skip if addon doesn't exist
+	fi
+
+	local content
+	content=$(cat "$source")
+	content=$(interpolate_template "$content")
+	echo "" >> "$target"
+	echo "$content" >> "$target"
+}
 
 # Support custom env file suffix (e.g., ".staging" for .env.staging)
-# Set via ENV_FILE_SUFFIX environment variable
-ENV_SUFFIX="${ENV_FILE_SUFFIX:-}"
-TARGET_ENV_FILE="$OPS_DIR/compose/.env${ENV_SUFFIX}"
+# Default is ".dev" for .env.dev (dev stage)
+ENV_SUFFIX="${ENV_FILE_SUFFIX:-.dev}"
+STAGE_NAME="${ENV_SUFFIX#.}"  # Remove leading dot (e.g., ".dev" -> "dev")
 
-# Extract stage name from suffix (e.g., ".staging" -> "staging", "" -> "dev")
-if [ -n "$ENV_SUFFIX" ]; then
-	STAGE_NAME="${ENV_SUFFIX#.}"  # Remove leading dot
-else
-	STAGE_NAME="dev"
-fi
+# Target files
+SHARED_ENV_FILE="$COMPOSE_DIR/.env"
+STAGE_ENV_FILE="$COMPOSE_DIR/.env${ENV_SUFFIX}"
 
-# Template files (note: "env." prefix instead of ".env" to avoid .gitignore issues)
-TEMPLATE_FILE="$OPS_DIR/env-templates/env.template"
+# Template files
+SHARED_TEMPLATE="$TEMPLATES_DIR/env.shared.template"
+STAGE_TEMPLATE="$TEMPLATES_DIR/env.template"
+DEV_ADDON_TEMPLATE="$TEMPLATES_DIR/env.dev.addon.template"
 
 # --- Handle DBMS selection ---
 
-# Determine DBMS choice: argument > env DBMS > default
 if [ -n "$1" ]; then
 	DBMS=$(echo "$1" | tr '[:upper:]' '[:lower:]')
 elif [ -z "$DBMS" ]; then
@@ -34,40 +99,55 @@ elif [ -z "$DBMS" ]; then
 else
 	DBMS=$(echo "$DBMS" | tr '[:upper:]' '[:lower:]')
 fi
-echo "Using DBMS: $DBMS"
 
 if [[ "$DBMS" != "postgres" && "$DBMS" != "mariadb" && "$DBMS" != "sqlite" ]]; then
-	echo "Warning: Invalid DBMS specified ($DBMS). Defaulting to postgres."
+	echo "Warning: Invalid DBMS ($DBMS). Defaulting to postgres."
 	DBMS="postgres"
 fi
 
+# DB host/port based on DBMS
 DB_HOST_VAL=""
 DB_PORT_VAL=""
-if [ "$DBMS" = "postgres" ]; then
-	DB_HOST_VAL="pg"
-	DB_PORT_VAL="5432"
-elif [ "$DBMS" = "mariadb" ]; then
-	DB_HOST_VAL="mariadb"
-	DB_PORT_VAL="3306"
-elif [ "$DBMS" = "sqlite" ]; then
-	DB_HOST_VAL="localhost"
-	DB_PORT_VAL=""
+case "$DBMS" in
+	postgres) DB_HOST_VAL="pg"; DB_PORT_VAL="5432" ;;
+	mariadb)  DB_HOST_VAL="mariadb"; DB_PORT_VAL="3306" ;;
+	sqlite)   DB_HOST_VAL="localhost"; DB_PORT_VAL="" ;;
+esac
+
+echo "Stage: $STAGE_NAME"
+echo "DBMS: $DBMS"
+
+# =============================================================================
+# 1. Create shared .env if it doesn't exist
+# =============================================================================
+
+if [ -f "$SHARED_ENV_FILE" ]; then
+	echo "✓ Shared .env already exists"
+else
+	echo "Creating shared .env..."
+	if [ -f "$SHARED_TEMPLATE" ]; then
+		cp "$SHARED_TEMPLATE" "$SHARED_ENV_FILE"
+		echo "✓ Created $SHARED_ENV_FILE"
+	else
+		echo "Warning: Shared template not found: $SHARED_TEMPLATE"
+	fi
 fi
 
-# --- Create .env file if it doesn't exist ---
+# =============================================================================
+# 2. Create stage-specific .env.STAGE if it doesn't exist
+# =============================================================================
 
-if [ -f "$TARGET_ENV_FILE" ]; then
-	echo "Environment file '$TARGET_ENV_FILE' already exists. Skipping creation."
+if [ -f "$STAGE_ENV_FILE" ]; then
+	echo "✓ Stage file $STAGE_ENV_FILE already exists"
 else
-	echo "Creating environment file '$TARGET_ENV_FILE'..."
+	echo "Creating $STAGE_ENV_FILE..."
 
 	# --- Gather required values ---
-
-	CURRENT_GID=$(id -g)
 	CURRENT_UID=$(id -u)
+	CURRENT_GID=$(id -g)
 	RANDOM_LOWER=$(LC_ALL=C tr -dc a-z </dev/urandom | head -c 5)
 
-	# Determine VSCode settings path
+	# VSCode settings path (for dev stage)
 	if [ -d "${HOME}/Library/Application Support/Code/User/" ]; then
 		VSCODE_SETTINGS_PATH="${HOME}/Library/Application Support/Code/User/"
 	elif [ -d "${HOME}/.config/Code/User/" ]; then
@@ -78,43 +158,28 @@ else
 
 	# --- Generate random passwords and user names ---
 	IQ_ADMIN_PW_VAL=$(LC_ALL=C tr -dc 'a-zA-Z0-9' </dev/urandom | head -c 16)
-	DB_SUPER_USER_VAL="ddl_user_"$(LC_ALL=C tr -dc a-z0-9 </dev/urandom | head -c 5)
+	DB_SUPER_USER_VAL="ddl_user_$(LC_ALL=C tr -dc a-z0-9 </dev/urandom | head -c 5)"
 	DB_SUPER_USER_PW_VAL=$(LC_ALL=C tr -dc 'a-zA-Z0-9' </dev/urandom | head -c 16)
 	DB_ROOT_PASSWORD_VAL=$(LC_ALL=C tr -dc 'a-zA-Z0-9' </dev/urandom | head -c 16)
 	DB_PASSWORD_VAL=$(LC_ALL=C tr -dc 'a-zA-Z0-9' </dev/urandom | head -c 16)
 
-	# --- Create file from template and replace placeholders ---
+	# --- Create from template using interpolation function ---
+	interpolate_file "$STAGE_TEMPLATE" "$STAGE_ENV_FILE"
 
-	cp "$TEMPLATE_FILE" "$TARGET_ENV_FILE"
-
-	# General placeholders
-	sed -i "s/{{stage}}/$STAGE_NAME/g" "$TARGET_ENV_FILE"
-	sed -i "s/{{random_lower}}/$RANDOM_LOWER/g" "$TARGET_ENV_FILE"
-	sed -i "s|{{vscode_settings_path}}|$VSCODE_SETTINGS_PATH|g" "$TARGET_ENV_FILE"
-	sed -i "s/{{uid}}/$CURRENT_UID/g" "$TARGET_ENV_FILE"
-	sed -i "s/{{gid}}/$CURRENT_GID/g" "$TARGET_ENV_FILE"
-	sed -i "s/IQ_ADMIN_PW={{random_password}}/IQ_ADMIN_PW=$IQ_ADMIN_PW_VAL/" "$TARGET_ENV_FILE"
-
-	# Database placeholders
-	sed -i "s/{{db_host}}/$DB_HOST_VAL/g" "$TARGET_ENV_FILE"
-	sed -i "s/{{db_port}}/$DB_PORT_VAL/g" "$TARGET_ENV_FILE"
-	sed -i "s/{{db_super_user}}/$DB_SUPER_USER_VAL/g" "$TARGET_ENV_FILE"
-	sed -i "s/{{db_super_user_pw}}/$DB_SUPER_USER_PW_VAL/g" "$TARGET_ENV_FILE"
-	sed -i "s/{{db_root_password}}/$DB_ROOT_PASSWORD_VAL/g" "$TARGET_ENV_FILE" # Corrected placeholder
-	sed -i "s/{{db_password}}/$DB_PASSWORD_VAL/g" "$TARGET_ENV_FILE"
-	sed -i "s/{{dbms}}/$DBMS/g" "$TARGET_ENV_FILE"
-
-	# --- Append DBMS-specific addon if it exists ---
-	ADDON_FILE="$OPS_DIR/env-templates/env.$DBMS.addon.template"
-	if [ -f "$ADDON_FILE" ]; then
-		echo -e "\n# --- Appending $DBMS-specific settings ---" >> "$TARGET_ENV_FILE"
-		# Append addon and replace placeholders
-		ADDON_CONTENT=$(cat "$ADDON_FILE")
-		ADDON_CONTENT="${ADDON_CONTENT//\{\{stage\}\}/$STAGE_NAME}"
-		echo "$ADDON_CONTENT" >> "$TARGET_ENV_FILE"
+	# --- Append DBMS-specific addon if exists ---
+	DBMS_ADDON="$TEMPLATES_DIR/env.$DBMS.addon.template"
+	if [ -f "$DBMS_ADDON" ]; then
+		echo "" >> "$STAGE_ENV_FILE"
+		echo "# --- $DBMS-specific settings ---" >> "$STAGE_ENV_FILE"
+		append_interpolated "$DBMS_ADDON" "$STAGE_ENV_FILE"
 	fi
 
-	echo "Environment file '$TARGET_ENV_FILE' created successfully with DBMS: $DBMS."
+	# --- Append dev-specific addon for dev stage ---
+	if [ "$STAGE_NAME" = "dev" ]; then
+		append_interpolated "$DEV_ADDON_TEMPLATE" "$STAGE_ENV_FILE"
+	fi
+
+	echo "✓ Created $STAGE_ENV_FILE"
 fi
 
 exit 0

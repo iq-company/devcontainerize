@@ -1,4 +1,6 @@
 {
+  // Helper: source ${workspaceFolder}/apps/{{ app_name }}/ops/scripts/common/load_env.sh
+  // Loads .env (shared) + .env.dev (stage) automatically
   "version": "2.0.0",
   "inputs": [
     {
@@ -16,7 +18,7 @@
     {
       "label": "Docs: Build Docs",
       "type": "shell",
-      "command": "source ${workspaceFolder}/apps/{{ app_name }}/ops/compose/.env && bench mkdocs-build",
+      "command": "source ${workspaceFolder}/apps/{{ app_name }}/ops/scripts/common/load_env.sh && bench mkdocs-build",
       "problemMatcher": [],
       "options": {
         "cwd": "${workspaceFolder}",
@@ -34,7 +36,7 @@
     {
       "label": "Docs: Start hot-reloading Service",
       "type": "shell",
-      "command": "source ${workspaceFolder}/apps/{{ app_name }}/ops/compose/.env && bench mkdocs-serve",
+      "command": "source ${workspaceFolder}/apps/{{ app_name }}/ops/scripts/common/load_env.sh && bench mkdocs-serve",
       "problemMatcher": [],
       "options": {
         "cwd": "${workspaceFolder}"
@@ -106,9 +108,9 @@
     {
       "label": "Apps: Create a new App",
       "type": "shell",
-      "command": "source ${workspaceFolder}/apps/{{ app_name }}/ops/compose/.env && ${workspaceFolder}/bin-dev/manage_app.py",
+      "command": "source ${workspaceFolder}/apps/{{ app_name }}/ops/scripts/common/load_env.sh && ${workspaceFolder}/bin-dev/manage_app.py",
       "options": {
-        "cwd": "${workspaceFolder}",
+        "cwd": "${workspaceFolder}"
       },
       "args": [
         "create",
@@ -119,9 +121,9 @@
     {
       "label": "Apps: Add existing App from a Repository",
       "type": "shell",
-      "command": "source ${workspaceFolder}/apps/{{ app_name }}/ops/compose/.env && ${workspaceFolder}/bin-dev/manage_app.py",
+      "command": "source ${workspaceFolder}/apps/{{ app_name }}/ops/scripts/common/load_env.sh && ${workspaceFolder}/bin-dev/manage_app.py",
       "args": [
-		"link",
+        "link",
         "${input:appUrl}"
       ],
       "problemMatcher": []
@@ -160,7 +162,7 @@
     {
       "label": "Show Info",
       "type": "shell",
-      "command": "source ${workspaceFolder}/apps/{{ app_name }}/ops/compose/.env && wait-for-it localhost:8000 && ${workspaceFolder}/bin-dev/info_bench_start.sh",
+      "command": "source ${workspaceFolder}/apps/{{ app_name }}/ops/scripts/common/load_env.sh && wait-for-it localhost:8000 && ${workspaceFolder}/bin-dev/info_bench_start.sh",
       "problemMatcher": [],
       "presentation": {
         "reveal": "always",

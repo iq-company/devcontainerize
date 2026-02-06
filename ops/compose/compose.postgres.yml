@@ -1,13 +1,14 @@
+# PostgreSQL database service
+# Environment variables are provided via --env-file from stage configuration
+
 services:
   db:
     image: postgres:16
     volumes:
       - pg_data:/var/lib/postgresql/data
     environment:
-      POSTGRES_PASSWORD: "${DB_ROOT_PASSWORD}" # Used for the 'postgres' user
+      POSTGRES_PASSWORD: "${DB_ROOT_PASSWORD}"
       POSTGRES_HOST_AUTH_METHOD: ${POSTGRES_HOST_AUTH_METHOD:-scram-sha-256}
-    env_file:
-      - ./.env
 
 volumes:
   pg_data:

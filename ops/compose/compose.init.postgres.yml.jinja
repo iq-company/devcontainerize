@@ -1,9 +1,13 @@
+# Init service for PostgreSQL
+# .env contains shared defaults, STAGE_ENV_FILE (set by CLI) contains stage-specific overrides
+
 services:
   init:
     image: ${CUSTOM_IMAGE:-{{ image_prefix }}-release}:${CUSTOM_TAG:-latest}
     platform: linux/amd64
     env_file:
       - ./.env
+      - ./${STAGE_ENV_FILE:-.env.dev}
     volumes:
       - sites:/home/{{ image_user }}/bench/sites
       - ../scripts/runtime:/home/{{ image_user }}/bench/bin-dev:ro

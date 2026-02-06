@@ -23,10 +23,10 @@ def main():
     default_dbms = sys.argv[3]
 
     compose_dir = dst_path / "ops" / "compose"
-    env_file = compose_dir / ".env"
+    env_file = compose_dir / ".env.dev"
     init_script = dst_path / "ops" / "scripts" / "devcontainer" / "init_env_files"
 
-    # Check if .env already exists
+    # Check if .env.dev already exists
     if env_file.exists():
         print(f"[ok] Environment file already exists: {env_file}")
         return
@@ -44,7 +44,7 @@ def main():
     result = subprocess.run(
         ["bash", str(init_script), default_dbms],
         cwd=dst_path,
-        env={**os.environ, "ENV_FILE_SUFFIX": ""}  # Empty suffix for dev stage
+        env={**os.environ, "ENV_FILE_SUFFIX": ".dev"}  # .dev suffix for dev stage
     )
 
     if result.returncode != 0:

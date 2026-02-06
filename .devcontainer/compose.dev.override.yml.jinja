@@ -2,14 +2,15 @@
 # It mounts local source code and defines the main application service for debugging.
 #
 # Note: This file is placed in .devcontainer/ for VSCode devcontainer support.
-# It reads the shared .env file from ops/compose/.
+# It reads .env (shared defaults) and .env.dev (stage-specific) from ops/compose/.
 
 x-backend-defaults: &backend_defaults
   image: "${IQ_IMAGE}:${IQ_IMAGE_TAG}"
   platform: linux/amd64
-  profiles: ["ddl"]  # Activate DDL profile for dev
+  # Note: Add "profiles: [...]" here if this service should only start
+  # when specific COMPOSE_PROFILES are set in .env
   environment:
-    # DDL profile: use super-user credentials (empty = use defaults from .env)
+    # DDL mode: use super-user credentials (empty = use DB_SUPER_USER from .env)
     DB_USER: ""
     DB_PASSWORD: ""
   volumes:
@@ -21,6 +22,7 @@ x-backend-defaults: &backend_defaults
       target: "/home/{{ image_user }}/.vscode-host"
   env_file:
     - ../ops/compose/.env
+    - ../ops/compose/.env.dev
 
 services:
   init:

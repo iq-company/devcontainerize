@@ -1,5 +1,5 @@
-# PowerShell script to create a single .env file if it doesn't exist
-# This script is called by VSCode devcontainer initializeCommand on Windows
+# Script to create .env (shared) and .env.STAGE files
+# Called by VSCode devcontainer initializeCommand on Windows
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
@@ -7,131 +7,175 @@ $ErrorActionPreference = "Stop"
 # Determine ops directory
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Definition
 $opsDir = Join-Path $scriptDir "../.."
+$composeDir = Join-Path $opsDir "compose"
+$templatesDir = Join-Path $opsDir "env-templates"
 
-# Support custom env file suffix (e.g., ".staging" for .env.staging)
-# Set via ENV_FILE_SUFFIX environment variable
-$envSuffix = if ($env:ENV_FILE_SUFFIX) { $env:ENV_FILE_SUFFIX } else { "" }
-$targetEnvFile = Join-Path $opsDir "compose/.env$envSuffix"
+# =============================================================================
+# Interpolation function - replaces all known placeholders in content
+# =============================================================================
+function Invoke-TemplateInterpolation {
+    param([string]$Content)
 
-# Extract stage name from suffix (e.g., ".staging" -> "staging", "" -> "dev")
-if ($envSuffix) {
-    $stageName = $envSuffix.TrimStart('.')
-} else {
-    $stageName = "dev"
+    # Stage and project
+    $Content = $Content -replace '\{\{stage\}\}', $script:stageName
+    $Content = $Content -replace '\{\{random_lower\}\}', $script:randomLower
+
+    # Passwords and credentials
+    $Content = $Content -replace '\{\{random_password\}\}', $script:iqAdminPwVal
+    $Content = $Content -replace '\{\{db_super_user\}\}', $script:dbSuperUserVal
+    $Content = $Content -replace '\{\{db_super_user_pw\}\}', $script:dbSuperUserPwVal
+    $Content = $Content -replace '\{\{db_root_password\}\}', $script:dbRootPasswordVal
+    $Content = $Content -replace '\{\{db_password\}\}', $script:dbPasswordVal
+
+    # Database settings
+    $Content = $Content -replace '\{\{dbms\}\}', $script:dbms
+    $Content = $Content -replace '\{\{db_host\}\}', $script:dbHostVal
+    $Content = $Content -replace '\{\{db_port\}\}', $script:dbPortVal
+
+    # Dev-specific
+    $Content = $Content -replace '\{\{uid\}\}', $script:currentUid
+    $Content = $Content -replace '\{\{gid\}\}', $script:currentGid
+    $Content = $Content -replace '\{\{vscode_settings_path\}\}', $script:vscodeSettingsPath
+
+    return $Content
 }
 
-# Template files (note: "env." prefix instead of ".env" to avoid .gitignore issues)
-$templateFile = Join-Path $opsDir "env-templates/env.template"
+# Interpolate a template file and write to target
+function Invoke-InterpolateFile {
+    param(
+        [string]$Source,
+        [string]$Target
+    )
+
+    if (-not (Test-Path $Source)) {
+        Write-Host "Warning: Template not found: $Source"
+        return $false
+    }
+
+    $content = Get-Content $Source -Raw
+    $content = Invoke-TemplateInterpolation -Content $content
+    $content | Set-Content $Target
+    return $true
+}
+
+# Append interpolated template content to a file
+function Invoke-AppendInterpolated {
+    param(
+        [string]$Source,
+        [string]$Target
+    )
+
+    if (-not (Test-Path $Source)) {
+        return  # Silently skip if addon doesn't exist
+    }
+
+    $content = Get-Content $Source -Raw
+    $content = Invoke-TemplateInterpolation -Content $content
+    Add-Content -Path $Target -Value "`n$content"
+}
+
+# Support custom env file suffix (default: ".dev")
+$envSuffix = if ($env:ENV_FILE_SUFFIX) { $env:ENV_FILE_SUFFIX } else { ".dev" }
+$script:stageName = $envSuffix.TrimStart('.')
+
+# Target files
+$sharedEnvFile = Join-Path $composeDir ".env"
+$stageEnvFile = Join-Path $composeDir ".env$envSuffix"
+
+# Template files
+$sharedTemplate = Join-Path $templatesDir "env.shared.template"
+$stageTemplate = Join-Path $templatesDir "env.template"
+$devAddonTemplate = Join-Path $templatesDir "env.dev.addon.template"
 
 # --- Handle DBMS selection ---
-
-# Determine DBMS choice: argument > env DBMS > default
-$dbms = ""
+$script:dbms = ""
 if ($args.Count -gt 0) {
-    $dbms = $args[0].ToLower()
+    $script:dbms = $args[0].ToLower()
 } elseif ($env:DBMS) {
-    $dbms = $env:DBMS.ToLower()
+    $script:dbms = $env:DBMS.ToLower()
 } else {
-    $dbms = "postgres"
-}
-Write-Host "Using DBMS: $dbms"
-
-if ($dbms -ne "postgres" -and $dbms -ne "mariadb" -and $dbms -ne "sqlite") {
-    Write-Host "Warning: Invalid DBMS specified ($dbms). Defaulting to postgres."
-    $dbms = "postgres"
+    $script:dbms = "postgres"
 }
 
-$dbHostVal = ""
-$dbPortVal = ""
-if ($dbms -eq "postgres") {
-    $dbHostVal = "pg"
-    $dbPortVal = "5432"
-} elseif ($dbms -eq "mariadb") {
-    $dbHostVal = "mariadb"
-    $dbPortVal = "3306"
-} elseif ($dbms -eq "sqlite") {
-    $dbHostVal = "localhost"
-    $dbPortVal = ""
+if ($script:dbms -ne "postgres" -and $script:dbms -ne "mariadb" -and $script:dbms -ne "sqlite") {
+    Write-Host "Warning: Invalid DBMS ($script:dbms). Defaulting to postgres."
+    $script:dbms = "postgres"
 }
 
-# --- Create .env file if it doesn't exist ---
+# DB host/port based on DBMS
+$script:dbHostVal = ""
+$script:dbPortVal = ""
+switch ($script:dbms) {
+    "postgres" { $script:dbHostVal = "pg"; $script:dbPortVal = "5432" }
+    "mariadb"  { $script:dbHostVal = "mariadb"; $script:dbPortVal = "3306" }
+    "sqlite"   { $script:dbHostVal = "localhost"; $script:dbPortVal = "" }
+}
 
-if (Test-Path $targetEnvFile) {
-    Write-Host "Environment file '$targetEnvFile' already exists. Skipping creation."
+Write-Host "Stage: $script:stageName"
+Write-Host "DBMS: $script:dbms"
+
+# =============================================================================
+# 1. Create shared .env if it doesn't exist
+# =============================================================================
+
+if (Test-Path $sharedEnvFile) {
+    Write-Host "✓ Shared .env already exists"
 } else {
-    Write-Host "Creating environment file '$targetEnvFile'..."
-
-    # --- Gather required values ---
-
-    # Get current UID and GID (for Linux/WSL compatibility)
-    # In a devcontainer, these should typically be available.
-    # Fallback to 1000 if not found, though this might not be ideal for all scenarios.
-    try {
-        $currentUid = (id -u).Trim()
-        $currentGid = (id -g).Trim()
-    } catch {
-        Write-Warning "Could not determine UID/GID. Defaulting to 1000."
-        $currentUid = "1000"
-        $currentGid = "1000"
-    }
-
-    # Generate 5 random lowercase letters
-    $charsLower = 'abcdefghijklmnopqrstuvwxyz'
-    $randomLower = -join (1..5 | ForEach-Object { $charsLower[(Get-Random -Maximum $charsLower.Length)] })
-
-    # Determine VSCode settings path
-    if (Test-Path "$env:APPDATA\Code\User") { # Windows
-        $vscodeSettingsPath = "$env:APPDATA\Code\User\"
-    } elseif (Test-Path "$env:HOME/.config/Code/User") { # Linux
-        $vscodeSettingsPath = "$env:HOME/.config/Code/User/"
+    Write-Host "Creating shared .env..."
+    if (Test-Path $sharedTemplate) {
+        Copy-Item $sharedTemplate -Destination $sharedEnvFile
+        Write-Host "✓ Created $sharedEnvFile"
     } else {
-        $vscodeSettingsPath = "/tmp/.vscode-host"
+        Write-Host "Warning: Shared template not found: $sharedTemplate"
+    }
+}
+
+# =============================================================================
+# 2. Create stage-specific .env.STAGE if it doesn't exist
+# =============================================================================
+
+if (Test-Path $stageEnvFile) {
+    Write-Host "✓ Stage file $stageEnvFile already exists"
+} else {
+    Write-Host "Creating $stageEnvFile..."
+
+    # --- Gather required values (script scope for interpolation function) ---
+    $script:currentUid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+    $script:currentGid = $script:currentUid  # Windows doesn't have GID like Unix
+
+    # Generate random values
+    $chars = 'abcdefghijklmnopqrstuvwxyz'
+    $alphanumeric = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
+
+    $script:randomLower = -join ((0..4) | ForEach-Object { $chars[(Get-Random -Maximum $chars.Length)] })
+    $script:iqAdminPwVal = -join ((0..15) | ForEach-Object { $alphanumeric[(Get-Random -Maximum $alphanumeric.Length)] })
+    $script:dbSuperUserVal = "ddl_user_" + (-join ((0..4) | ForEach-Object { $chars[(Get-Random -Maximum $chars.Length)] }))
+    $script:dbSuperUserPwVal = -join ((0..15) | ForEach-Object { $alphanumeric[(Get-Random -Maximum $alphanumeric.Length)] })
+    $script:dbRootPasswordVal = -join ((0..15) | ForEach-Object { $alphanumeric[(Get-Random -Maximum $alphanumeric.Length)] })
+    $script:dbPasswordVal = -join ((0..15) | ForEach-Object { $alphanumeric[(Get-Random -Maximum $alphanumeric.Length)] })
+
+    # VSCode settings path
+    $script:vscodeSettingsPath = Join-Path $env:APPDATA "Code/User"
+    if (-not (Test-Path $script:vscodeSettingsPath)) {
+        $script:vscodeSettingsPath = "C:/temp/.vscode-host"
     }
 
-    # --- Generate random passwords and user names ---
-    $charsAlphanumeric = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
-    $iqAdminPwVal = -join (1..16 | ForEach-Object { $charsAlphanumeric[(Get-Random -Maximum $charsAlphanumeric.Length)] })
-    $dbSuperUserVal = "ddl_user_" + (-join (1..5 | ForEach-Object { $charsAlphanumeric[(Get-Random -Maximum $charsAlphanumeric.Length)] }))
-    $dbSuperUserPwVal = -join (1..16 | ForEach-Object { $charsAlphanumeric[(Get-Random -Maximum $charsAlphanumeric.Length)] })
-    $dbRootPasswordVal = -join (1..16 | ForEach-Object { $charsAlphanumeric[(Get-Random -Maximum $charsAlphanumeric.Length)] })
-    $dbPasswordVal = -join (1..16 | ForEach-Object { $charsAlphanumeric[(Get-Random -Maximum $charsAlphanumeric.Length)] })
+    # --- Create from template using interpolation function ---
+    Invoke-InterpolateFile -Source $stageTemplate -Target $stageEnvFile
 
-    # --- Create file from template and replace placeholders ---
-
-    Copy-Item $templateFile -Destination $targetEnvFile
-
-    $content = Get-Content $targetEnvFile -Raw
-
-    # General placeholders
-    $content = $content -replace '\{\{stage\}\}', $stageName
-    $content = $content -replace '\{\{random_lower\}\}', $randomLower
-    $content = $content -replace '\{\{vscode_settings_path\}\}', $vscodeSettingsPath
-    $content = $content -replace '\{\{uid\}\}', $currentUid
-    $content = $content -replace '\{\{gid\}\}', $currentGid
-    $content = $content -replace 'IQ_ADMIN_PW=\{\{random_password\}\}', "IQ_ADMIN_PW=$iqAdminPwVal"
-
-    # Database placeholders
-    $content = $content -replace '\{\{db_host\}\}', $dbHostVal
-    $content = $content -replace '\{\{db_port\}\}', $dbPortVal
-    $content = $content -replace '\{\{db_super_user\}\}', $dbSuperUserVal
-    $content = $content -replace '\{\{db_super_user_pw\}\}', $dbSuperUserPwVal
-    $content = $content -replace '\{\{db_root_password\}\}', $dbRootPasswordVal
-    $content = $content -replace '\{\{db_password\}\}', $dbPasswordVal
-    $content = $content -replace '\{\{dbms\}\}', $dbms
-
-    $content | Set-Content $targetEnvFile
-
-    # --- Append DBMS-specific addon if it exists ---
-    $addonFile = Join-Path $opsDir "env-templates/env.$dbms.addon.template"
-    if (Test-Path $addonFile) {
-        Add-Content -Path $targetEnvFile -Value "`n# --- Appending $dbms-specific settings ---"
-        # Append addon and replace placeholders
-        $addonContent = Get-Content $addonFile -Raw
-        $addonContent = $addonContent -replace '\{\{stage\}\}', $stageName
-        Add-Content -Path $targetEnvFile -Value $addonContent
+    # --- Append DBMS-specific addon if exists ---
+    $dbmsAddon = Join-Path $templatesDir "env.$script:dbms.addon.template"
+    if (Test-Path $dbmsAddon) {
+        Add-Content -Path $stageEnvFile -Value "`n# --- $script:dbms-specific settings ---"
+        Invoke-AppendInterpolated -Source $dbmsAddon -Target $stageEnvFile
     }
 
-    Write-Host "Environment file '$targetEnvFile' created successfully with DBMS: $dbms."
+    # --- Append dev-specific addon for dev stage ---
+    if ($script:stageName -eq "dev") {
+        Invoke-AppendInterpolated -Source $devAddonTemplate -Target $stageEnvFile
+    }
+
+    Write-Host "✓ Created $stageEnvFile"
 }
 
 exit 0
