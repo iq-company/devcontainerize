@@ -4,6 +4,9 @@ Execute release cleanup tasks during Docker image build.
 
 Runs as root (bench commands don't allow root) to delete system files.
 Reads cleanup tasks from `ops_release_cleanup` hooks in all installed apps.
+
+NOTE: This script does NOT use frappe.init() because during Docker build
+there is no site configuration. Instead, it directly imports hooks from apps.
 """
 import importlib
 import os
@@ -14,19 +17,50 @@ import sys
 apps_path = os.environ.get("PYTHON_PATH", "/home/{{ image_user }}/bench/apps")
 sys.path.insert(0, apps_path)
 
-import frappe
+# Discover installed apps by scanning the apps directory
+def get_installed_apps():
+    """Get list of installed apps by scanning the apps directory."""
+    apps = []
+    if os.path.isdir(apps_path):
+        for name in os.listdir(apps_path):
+            app_path = os.path.join(apps_path, name)
+            # Check if it's a valid Python package with hooks
+            if os.path.isdir(app_path) and os.path.exists(os.path.join(app_path, name, "__init__.py")):
+                apps.append(name)
+    return apps
 
-# Initialize frappe minimally
-frappe.init("")
+# Get ops_release_cleanup hooks from an app
+def get_app_hooks(app_name):
+    """Import and return ops_release_cleanup hooks from an app."""
+    hooks = []
+    try:
+        # Try to import ops_hooks first (preferred location)
+        try:
+            ops_hooks = importlib.import_module(f"{app_name}.ops_hooks")
+            if hasattr(ops_hooks, "ops_release_cleanup"):
+                hooks.extend(ops_hooks.ops_release_cleanup)
+        except ImportError:
+            pass
+
+        # Also check main hooks.py
+        try:
+            main_hooks = importlib.import_module(f"{app_name}.hooks")
+            if hasattr(main_hooks, "ops_release_cleanup"):
+                hooks.extend(main_hooks.ops_release_cleanup)
+        except ImportError:
+            pass
+    except Exception as e:
+        print(f"Warning: Could not load hooks from {app_name}: {e}")
+    return hooks
 
 # Collect cleanup tasks from all apps
 all_cleanup_tasks = []
-bench_path = os.path.dirname(apps_path)
-sites_path = os.path.join(bench_path, "sites")
-linked_apps = frappe.get_all_apps(False, sites_path)
+installed_apps = get_installed_apps()
+print(f"Found apps: {installed_apps}")
 
-for app_name in linked_apps:
-    all_cleanup_tasks.extend(frappe.get_hooks("ops_release_cleanup", app_name=app_name))
+for app_name in installed_apps:
+    hooks = get_app_hooks(app_name)
+    all_cleanup_tasks.extend(hooks)
 
 # We're in Docker build, so docker won't be available
 during_build = True
@@ -57,8 +91,10 @@ for cleanup_task in all_cleanup_tasks:
             print(f"Error executing bash: {e}")
 
     elif "script" in cleanup_task:
-        for app in linked_apps:
-            script_path = os.path.join(frappe.get_app_path(app), cleanup_task["script"])
+        for app in installed_apps:
+            # Script path is relative to app directory (e.g., "../ops/build/resources/container-reduce.sh")
+            app_dir = os.path.join(apps_path, app, app)
+            script_path = os.path.normpath(os.path.join(app_dir, cleanup_task["script"]))
             if os.path.exists(script_path):
                 print(f"Executing script: {script_path}")
                 try:
@@ -71,4 +107,3 @@ for cleanup_task in all_cleanup_tasks:
                 break
 
 print("Release cleanup complete.")
-
