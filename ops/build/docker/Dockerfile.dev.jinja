@@ -95,6 +95,13 @@ RUN set -e; \
 	exit 1; \
 	fi
 
+# Clean up build caches to reduce image size (~1.4GB savings)
+RUN rm -rf /home/${IMAGE_USER}/.cache/yarn \
+	/home/${IMAGE_USER}/.cache/uv \
+	/home/${IMAGE_USER}/.cache/pip \
+	/home/${IMAGE_USER}/.cache/huggingface \
+	/tmp/*
+
 {% if feature_mkdocs %}
 # ##############################
 # Stage 2: Build mkdocs documentation
