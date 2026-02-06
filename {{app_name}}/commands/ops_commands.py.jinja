@@ -188,7 +188,13 @@ def build_cmd(images: bool, targets: tuple, push: bool, force: bool):
         if push:
             cmd.append("--push")
         if force:
-            cmd.append("--force")
+            # baker-cli --force expects target names to force rebuild
+            if targets:
+                for t in targets:
+                    cmd.extend(["--force", t])
+            else:
+                click.echo("⚠️  --force requires --targets to specify which targets to force rebuild")
+                sys.exit(1)
     else:
         # Show plan (default)
         cmd = [sys.executable, "-m", "baker_cli", "plan", "--settings", str(settings)]
@@ -1003,7 +1009,8 @@ def stage_build(stage_name: str, push: bool, force: bool):
     if push:
         cmd.append("--push")
     if force:
-        cmd.append("--force")
+        # baker-cli --force expects target name to force rebuild
+        cmd.extend(["--force", target])
 
     # Build args for the Docker build
     # These are passed as environment variables which Dockerfile ARGs pick up
