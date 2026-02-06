@@ -83,7 +83,16 @@ if [ ! -d "sites/$IQ_SITE_NAME" ]; then
 			echo "🛑 DB '$DB_NAME' already exists on DB (but not on FS)."
 			exit 1
 		else
+			# Determine the effective DB user (DDL mode uses DB_NAME as user)
+			EFFECTIVE_DB_USER="${DB_USER:-$DB_NAME}"
+			EFFECTIVE_DB_PASSWORD="${DB_PASSWORD:-$DB_SUPER_USER_PW}"
+
 			echo "Setting up new db, user, schema ..."
+			echo "  Database: $DB_NAME"
+			echo "  Schema: $DB_SCHEMA"
+			echo "  Super User (DDL): $DB_SUPER_USER"
+			echo "  App User: $EFFECTIVE_DB_USER"
+
 			PGPASSWORD="$DB_ROOT_PASSWORD" psql -h $DB_HOST -p $DB_PORT -U postgres -d postgres <<-EOF
 				CREATE DATABASE $DB_NAME;
 				CREATE USER $DB_SUPER_USER WITH PASSWORD '$DB_SUPER_USER_PW';
@@ -93,17 +102,18 @@ if [ ! -d "sites/$IQ_SITE_NAME" ]; then
 				REVOKE ALL PRIVILEGES ON SCHEMA public FROM $DB_SUPER_USER;
 				REVOKE CREATE ON SCHEMA public FROM $DB_SUPER_USER;
 
-				CREATE USER $DB_USER WITH PASSWORD '$DB_PASSWORD';
-				GRANT CONNECT ON DATABASE $DB_NAME TO $DB_USER;
-				GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA $DB_SCHEMA TO $DB_USER;
-				ALTER DEFAULT PRIVILEGES IN SCHEMA $DB_SCHEMA GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO $DB_USER;
-				ALTER DEFAULT PRIVILEGES IN SCHEMA $DB_SCHEMA GRANT SELECT, USAGE ON SEQUENCES TO $DB_USER;
-
-				ALTER USER "$DB_USER" SET search_path TO $DB_SCHEMA;
+				-- Create app user (in DDL mode this equals DB_NAME)
+				CREATE USER $EFFECTIVE_DB_USER WITH PASSWORD '$EFFECTIVE_DB_PASSWORD';
+				GRANT CONNECT ON DATABASE $DB_NAME TO $EFFECTIVE_DB_USER;
+				GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA $DB_SCHEMA TO $EFFECTIVE_DB_USER;
+				ALTER DEFAULT PRIVILEGES IN SCHEMA $DB_SCHEMA GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO $EFFECTIVE_DB_USER;
+				ALTER DEFAULT PRIVILEGES IN SCHEMA $DB_SCHEMA GRANT SELECT, USAGE ON SEQUENCES TO $EFFECTIVE_DB_USER;
+				ALTER USER $EFFECTIVE_DB_USER SET search_path TO $DB_SCHEMA;
 				COMMIT;
 EOF
 
 			echo "Creating site $IQ_SITE_NAME ..."
+			# Always pass db-user and password (DDL mode uses DB_NAME as user)
 			bench new-pg-site $IQ_SITE_NAME \
 				--db-host $DB_HOST \
 				--db-port $DB_PORT \
@@ -112,8 +122,8 @@ EOF
 				--admin-password $IQ_ADMIN_PW \
 				--db-name $DB_NAME \
 				--db-schema-name $DB_SCHEMA \
-				--db-user ${DB_USER:-$DB_SUPER_USER} \
-				--db-user-password ${DB_PASSWORD:-$DB_SUPER_USER_PW} \
+				--db-user "$EFFECTIVE_DB_USER" \
+				--db-user-password "$EFFECTIVE_DB_PASSWORD" \
 				--install-app {{ app_name }} \
 				--auto-rollback
 		fi
