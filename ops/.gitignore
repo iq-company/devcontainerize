@@ -1,2 +1,11 @@
-.env
-.env.*
+# Generated environment files - do not commit!
+# These contain credentials and are unique per developer/environment.
+#
+# Source templates: ops/env-templates/
+# Generate with: bench ops stage env <stage>
+env/.env
+env/.env.*
+
+# Copy of shared .env for Docker Compose variable interpolation
+# (copied from env/.env by init_env_files)
+compose/.env

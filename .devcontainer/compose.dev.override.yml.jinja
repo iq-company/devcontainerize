@@ -2,7 +2,7 @@
 # It mounts local source code and defines the main application service for debugging.
 #
 # Note: This file is placed in .devcontainer/ for VSCode devcontainer support.
-# It reads .env (shared defaults) and .env.dev (stage-specific) from ops/compose/.
+# It reads .env (shared defaults) and .env.dev (stage-specific) from ops/env/.
 
 x-backend-defaults: &backend_defaults
   image: "${IQ_IMAGE}:${IQ_IMAGE_TAG}"
@@ -14,15 +14,17 @@ x-backend-defaults: &backend_defaults
     DB_USER: ""
     DB_PASSWORD: ""
   volumes:
-    - ../ops/scripts/runtime:/home/{{ image_user }}/bench/bin-dev
+    # Path relative to compose project directory (ops/compose/)
+    - ../scripts/runtime:/home/{{ image_user }}/bench/bin-dev
     - sites:/home/{{ image_user }}/bench/sites
     - apps:/home/{{ image_user }}/bench/apps
     - type: bind
       source: "${VSCODE_SETTINGS_PATH}"
       target: "/home/{{ image_user }}/.vscode-host"
   env_file:
-    - ../ops/compose/.env
-    - ../ops/compose/.env.dev
+    # Paths are relative to compose project directory (ops/compose/, set by first -f file)
+    - ../env/.env
+    - ../env/.env.dev
 
 services:
   init:

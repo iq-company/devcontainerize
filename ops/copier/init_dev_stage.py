@@ -22,8 +22,8 @@ def main():
     image_prefix = sys.argv[2]
     default_dbms = sys.argv[3]
 
-    compose_dir = dst_path / "ops" / "compose"
-    env_file = compose_dir / ".env.dev"
+    env_dir = dst_path / "ops" / "env"
+    env_file = env_dir / ".env.dev"
     init_script = dst_path / "ops" / "scripts" / "devcontainer" / "init_env_files"
 
     # Check if .env.dev already exists

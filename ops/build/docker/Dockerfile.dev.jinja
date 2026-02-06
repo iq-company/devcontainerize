@@ -7,6 +7,8 @@ FROM ${BASE_IMAGE_SOURCE:-{{ image_prefix }}-base} AS dev-base
 
 ARG IMAGE_USER={{ image_user }}
 ARG IMAGE_GROUP={{ image_group }}
+# Export IMAGE_USER as ENV for runtime scripts
+ENV IMAGE_USER=${IMAGE_USER}
 
 ARG CUSTOM_APPS
 ARG GITHUB_USER=x-oauth-basic

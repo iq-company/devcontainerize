@@ -8,8 +8,8 @@ x-backend-defaults: &backend_defaults
   volumes:
     - sites:/home/{{ image_user }}/bench/sites
   env_file:
-    - ./.env
-    - ./${STAGE_ENV_FILE:-.env.dev}
+    - ../env/.env
+    - ../env/${STAGE_ENV_FILE:-.env.dev}
   depends_on:
     init:
       condition: service_completed_successfully

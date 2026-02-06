@@ -8,8 +8,11 @@ set -e
 # Determine ops directory
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OPS_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
-COMPOSE_DIR="$OPS_DIR/compose"
+ENV_DIR="$OPS_DIR/env"
 TEMPLATES_DIR="$OPS_DIR/env-templates"
+
+# Ensure env directory exists
+mkdir -p "$ENV_DIR"
 
 # =============================================================================
 # Interpolation function - replaces all known placeholders in a string
@@ -82,8 +85,8 @@ ENV_SUFFIX="${ENV_FILE_SUFFIX:-.dev}"
 STAGE_NAME="${ENV_SUFFIX#.}"  # Remove leading dot (e.g., ".dev" -> "dev")
 
 # Target files
-SHARED_ENV_FILE="$COMPOSE_DIR/.env"
-STAGE_ENV_FILE="$COMPOSE_DIR/.env${ENV_SUFFIX}"
+SHARED_ENV_FILE="$ENV_DIR/.env"
+STAGE_ENV_FILE="$ENV_DIR/.env${ENV_SUFFIX}"
 
 # Template files
 SHARED_TEMPLATE="$TEMPLATES_DIR/env.shared.template"
@@ -109,8 +112,8 @@ fi
 DB_HOST_VAL=""
 DB_PORT_VAL=""
 case "$DBMS" in
-	postgres) DB_HOST_VAL="pg"; DB_PORT_VAL="5432" ;;
-	mariadb)  DB_HOST_VAL="mariadb"; DB_PORT_VAL="3306" ;;
+	postgres) DB_HOST_VAL="db"; DB_PORT_VAL="5432" ;;
+	mariadb)  DB_HOST_VAL="db"; DB_PORT_VAL="3306" ;;
 	sqlite)   DB_HOST_VAL="localhost"; DB_PORT_VAL="" ;;
 esac
 
@@ -134,7 +137,18 @@ else
 fi
 
 # =============================================================================
-# 2. Create stage-specific .env.STAGE if it doesn't exist
+# 2. Merge .env + .env.STAGE to compose/.env for Docker Compose
+# =============================================================================
+# Docker Compose needs .env in the project directory for ${VAR} substitution
+# in YAML files (e.g., image: "${IQ_IMAGE}", COMPOSE_PROJECT_NAME).
+# The env_file: directive only loads vars into container environment, not for YAML.
+# We merge both files so all variables are available for interpolation.
+
+COMPOSE_DIR="$OPS_DIR/compose"
+COMPOSE_ENV_COPY="$COMPOSE_DIR/.env"
+
+# =============================================================================
+# 3. Create stage-specific .env.STAGE if it doesn't exist
 # =============================================================================
 
 if [ -f "$STAGE_ENV_FILE" ]; then
@@ -180,6 +194,38 @@ else
 	fi
 
 	echo "✓ Created $STAGE_ENV_FILE"
+fi
+
+# =============================================================================
+# 4. Merge .env + .env.STAGE to compose/.env
+# =============================================================================
+# This merged file is needed for Docker Compose YAML interpolation.
+# Variables like COMPOSE_PROJECT_NAME, IQ_IMAGE must be available during parsing.
+
+if [ -f "$SHARED_ENV_FILE" ] && [ -f "$STAGE_ENV_FILE" ]; then
+	{
+		echo "# ============================================================================="
+		echo "# AUTO-GENERATED MERGED FILE - DO NOT EDIT!"
+		echo "# ============================================================================="
+		echo "# Sources: ops/env/.env + ops/env/.env.$STAGE_NAME"
+		echo "# This file is overwritten on every devcontainer start."
+		echo "#"
+		echo "# Why this merged copy exists:"
+		echo "# Docker Compose needs .env in the project directory (ops/compose/) for"
+		echo "# \${VAR} interpolation in YAML files (e.g., image: \"\${IQ_IMAGE}\")."
+		echo "# Variables like COMPOSE_PROJECT_NAME are also read from here."
+		echo "# The env_file: directive only loads vars into container environment."
+		echo "#"
+		echo "# To change settings, edit: ops/env/.env or ops/env/.env.$STAGE_NAME"
+		echo "# ============================================================================="
+		echo ""
+		echo "# --- From ops/env/.env (shared) ---"
+		cat "$SHARED_ENV_FILE"
+		echo ""
+		echo "# --- From ops/env/.env.$STAGE_NAME (stage-specific) ---"
+		cat "$STAGE_ENV_FILE"
+	} > "$COMPOSE_ENV_COPY"
+	echo "✓ Merged .env + .env.$STAGE_NAME to compose/.env"
 fi
 
 exit 0

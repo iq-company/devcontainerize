@@ -153,11 +153,12 @@ app/
 │   │   ├── compose.base.yml
 │   │   ├── compose.postgres.yml
 │   │   ├── compose.mariadb.yml
-│   │   ├── compose.release.yml
-│   │   ├── .env                   # ⚠️ Generated, gitignored (via ops/.gitignore)
-│   │   ├── .env.dev               # ⚠️ Generated, gitignored
-│   │   ├── .env.staging           # ⚠️ Generated, gitignored
-│   │   └── .env.prod              # ⚠️ Generated, gitignored
+│   │   └── compose.release.yml
+│   ├── env/                       # Generated .env files (gitignored)
+│   │   ├── .env                   # ⚠️ Shared defaults
+│   │   ├── .env.dev               # ⚠️ Dev stage (for vscode devcontainer setup)
+│   │   ├── .env.staging           # ⚠️ Staging stage
+│   │   └── .env.prod              # ⚠️ Prod stage
 │   ├── env-templates/             # Environment templates
 │   │   ├── env.shared.template    # → .env (shared defaults)
 │   │   ├── env.template           # → .env.STAGE (stage-specific)
@@ -443,7 +444,7 @@ Load Order: .env (shared) → .env.STAGE (overrides)
 ### File Structure
 
 ```
-ops/compose/
+ops/env/
 ├── .env          # Shared defaults (all stages)
 ├── .env.dev      # Dev stage overrides
 ├── .env.staging  # Staging stage overrides

@@ -4,7 +4,7 @@
 # Default stage: dev
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ENV_DIR="$(cd "$SCRIPT_DIR/../../compose" && pwd)"
+ENV_DIR="$(cd "$SCRIPT_DIR/../../env" && pwd)"
 STAGE="${1:-dev}"
 
 # Load shared defaults first

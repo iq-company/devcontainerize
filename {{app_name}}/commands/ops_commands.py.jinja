@@ -638,7 +638,7 @@ def stage():
 def stage_ls(verbose: bool):
     """List all defined stages."""
     app_root = get_app_root()
-    compose_dir = app_root / "ops" / "compose"
+    env_dir = app_root / "ops" / "env"
     config = load_stages_config()
     stages = config.get("stages", {})
 
@@ -657,7 +657,7 @@ def stage_ls(verbose: bool):
 
         # Check if env file exists
         env_filename = resolved.get("env_file", ".env")
-        env_file = compose_dir / env_filename
+        env_file = env_dir / env_filename
         env_status = "✓" if env_file.exists() else "✗"
 
         click.echo(f"  • {name}{extends} → {target}  [{env_status} {env_filename}]")
@@ -741,6 +741,7 @@ def stage_run(stage_name: str, detach: bool, foreground: bool):
     stage = get_stage_config(config, stage_name)
     app_root = get_app_root()
     compose_dir = app_root / "ops" / "compose"
+    env_dir = app_root / "ops" / "env"
 
     # Check image availability
     image_name = get_stage_image_name(config, stage_name)
@@ -757,9 +758,10 @@ def stage_run(stage_name: str, detach: bool, foreground: bool):
         if not click.confirm("Try to continue anyway?", default=False):
             sys.exit(1)
 
-    # Determine env file
+    # Determine env files (shared + stage-specific)
+    shared_env_file = env_dir / ".env"
     env_file_name = stage.get("env_file", ".env.dev")
-    env_file = compose_dir / env_file_name
+    stage_env_file = env_dir / env_file_name
 
     # Build compose command
     compose_files = get_compose_files(stage)
@@ -768,8 +770,11 @@ def stage_run(stage_name: str, detach: bool, foreground: bool):
     for f in compose_files:
         cmd.extend(["-f", f])
 
-    if env_file.exists():
-        cmd.extend(["--env-file", str(env_file)])
+    # Load shared env first (for IQ_IMAGE etc.), then stage-specific (overrides)
+    if shared_env_file.exists():
+        cmd.extend(["--env-file", str(shared_env_file)])
+    if stage_env_file.exists():
+        cmd.extend(["--env-file", str(stage_env_file)])
 
     # Add profiles
     for profile in stage.get("profiles", []):
@@ -783,7 +788,7 @@ def stage_run(stage_name: str, detach: bool, foreground: bool):
     click.echo(f"🚀 Starting stage '{stage_name}'...")
     click.echo(f"   Image: {image_name}{' (from registry)' if has_registry else ' (local)'}")
     click.echo(f"   Compose files: {', '.join(Path(f).name for f in compose_files)}")
-    click.echo(f"   Env file: {env_file.name if env_file.exists() else '(none)'}")
+    click.echo(f"   Env files: .env + {env_file_name}")
     click.echo(f"   Profiles: {', '.join(stage.get('profiles', [])) or '(none)'}")
     click.echo(f"\n   Running: {' '.join(cmd)}\n")
 
@@ -803,13 +808,22 @@ def stage_stop(stage_name: str):
     stage = get_stage_config(config, stage_name)
     app_root = get_app_root()
     compose_dir = app_root / "ops" / "compose"
+    env_dir = app_root / "ops" / "env"
+    shared_env_file = env_dir / ".env"
     env_file_name = stage.get("env_file", ".env.dev")
+    stage_env_file = env_dir / env_file_name
 
     compose_files = get_compose_files(stage)
     cmd = ["docker", "compose"]
 
     for f in compose_files:
         cmd.extend(["-f", f])
+
+    # Load env files for COMPOSE_PROJECT_NAME
+    if shared_env_file.exists():
+        cmd.extend(["--env-file", str(shared_env_file)])
+    if stage_env_file.exists():
+        cmd.extend(["--env-file", str(stage_env_file)])
 
     # Add profiles (needed to stop profile-specific services)
     for profile in stage.get("profiles", []):
@@ -833,13 +847,22 @@ def stage_clean(stage_name: str, volumes: bool):
     stage = get_stage_config(config, stage_name)
     app_root = get_app_root()
     compose_dir = app_root / "ops" / "compose"
+    env_dir = app_root / "ops" / "env"
+    shared_env_file = env_dir / ".env"
     env_file_name = stage.get("env_file", ".env.dev")
+    stage_env_file = env_dir / env_file_name
 
     compose_files = get_compose_files(stage)
     cmd = ["docker", "compose"]
 
     for f in compose_files:
         cmd.extend(["-f", f])
+
+    # Load env files for COMPOSE_PROJECT_NAME
+    if shared_env_file.exists():
+        cmd.extend(["--env-file", str(shared_env_file)])
+    if stage_env_file.exists():
+        cmd.extend(["--env-file", str(stage_env_file)])
 
     for profile in stage.get("profiles", []):
         cmd.extend(["--profile", profile])
@@ -864,10 +887,10 @@ def stage_env(stage_name: str, force: bool):
     config = load_stages_config()
     stage = get_stage_config(config, stage_name)
     app_root = get_app_root()
-    compose_dir = app_root / "ops" / "compose"
+    env_dir = app_root / "ops" / "env"
 
     env_filename = stage.get("env_file", f".env.{stage_name}")
-    env_file = compose_dir / env_filename
+    env_file = env_dir / env_filename
 
     if env_file.exists() and not force:
         click.echo(f"⚠️  {env_filename} already exists. Use -f to overwrite.")
@@ -1071,8 +1094,8 @@ def stage_add(stage_name: str, extends_stage: Optional[str], target_name: Option
     click.echo(f"✅ Added stage '{stage_name}'")
 
     # Create env file using init_env_files script (generates unique credentials)
-    compose_dir = app_root / "ops" / "compose"
-    env_file = compose_dir / f".env.{stage_name}"
+    env_dir = app_root / "ops" / "env"
+    env_file = env_dir / f".env.{stage_name}"
 
     if not env_file.exists():
         if click.confirm(f"Create {env_file.name} with fresh credentials?", default=True):
@@ -1138,8 +1161,8 @@ def stage_rm(stage_name: str, yes: bool, no_delete_env: bool):
     click.echo(f"✅ Removed stage '{stage_name}'")
 
     # Handle env file deletion
-    compose_dir = app_root / "ops" / "compose"
-    env_file = compose_dir / env_filename
+    env_dir = app_root / "ops" / "env"
+    env_file = env_dir / env_filename
 
     if env_file.exists() and env_filename != ".env":  # Don't delete base .env
         if no_delete_env:

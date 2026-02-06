@@ -7,8 +7,13 @@ $ErrorActionPreference = "Stop"
 # Determine ops directory
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Definition
 $opsDir = Join-Path $scriptDir "../.."
-$composeDir = Join-Path $opsDir "compose"
+$envDir = Join-Path $opsDir "env"
 $templatesDir = Join-Path $opsDir "env-templates"
+
+# Ensure env directory exists
+if (-not (Test-Path $envDir)) {
+    New-Item -ItemType Directory -Path $envDir -Force | Out-Null
+}
 
 # =============================================================================
 # Interpolation function - replaces all known placeholders in content
@@ -79,8 +84,8 @@ $envSuffix = if ($env:ENV_FILE_SUFFIX) { $env:ENV_FILE_SUFFIX } else { ".dev" }
 $script:stageName = $envSuffix.TrimStart('.')
 
 # Target files
-$sharedEnvFile = Join-Path $composeDir ".env"
-$stageEnvFile = Join-Path $composeDir ".env$envSuffix"
+$sharedEnvFile = Join-Path $envDir ".env"
+$stageEnvFile = Join-Path $envDir ".env$envSuffix"
 
 # Template files
 $sharedTemplate = Join-Path $templatesDir "env.shared.template"
@@ -106,8 +111,8 @@ if ($script:dbms -ne "postgres" -and $script:dbms -ne "mariadb" -and $script:dbm
 $script:dbHostVal = ""
 $script:dbPortVal = ""
 switch ($script:dbms) {
-    "postgres" { $script:dbHostVal = "pg"; $script:dbPortVal = "5432" }
-    "mariadb"  { $script:dbHostVal = "mariadb"; $script:dbPortVal = "3306" }
+    "postgres" { $script:dbHostVal = "db"; $script:dbPortVal = "5432" }
+    "mariadb"  { $script:dbHostVal = "db"; $script:dbPortVal = "3306" }
     "sqlite"   { $script:dbHostVal = "localhost"; $script:dbPortVal = "" }
 }
 
@@ -131,7 +136,18 @@ if (Test-Path $sharedEnvFile) {
 }
 
 # =============================================================================
-# 2. Create stage-specific .env.STAGE if it doesn't exist
+# 2. Merge .env + .env.STAGE to compose/.env for Docker Compose
+# =============================================================================
+# Docker Compose needs .env in the project directory for ${VAR} substitution
+# in YAML files (e.g., image: "${IQ_IMAGE}", COMPOSE_PROJECT_NAME).
+# The env_file: directive only loads vars into container environment, not for YAML.
+# We merge both files so all variables are available for interpolation.
+
+$composeDir = Join-Path $opsDir "compose"
+$composeEnvCopy = Join-Path $composeDir ".env"
+
+# =============================================================================
+# 3. Create stage-specific .env.STAGE if it doesn't exist
 # =============================================================================
 
 if (Test-Path $stageEnvFile) {
@@ -176,6 +192,39 @@ if (Test-Path $stageEnvFile) {
     }
 
     Write-Host "✓ Created $stageEnvFile"
+}
+
+# =============================================================================
+# 4. Merge .env + .env.STAGE to compose/.env
+# =============================================================================
+# This merged file is needed for Docker Compose YAML interpolation.
+# Variables like COMPOSE_PROJECT_NAME, IQ_IMAGE must be available during parsing.
+
+if ((Test-Path $sharedEnvFile) -and (Test-Path $stageEnvFile)) {
+    $header = @"
+# =============================================================================
+# AUTO-GENERATED MERGED FILE - DO NOT EDIT!
+# =============================================================================
+# Sources: ops/env/.env + ops/env/.env.$script:stageName
+# This file is overwritten on every devcontainer start.
+#
+# Why this merged copy exists:
+# Docker Compose needs .env in the project directory (ops/compose/) for
+# `${VAR}` interpolation in YAML files (e.g., image: "`${IQ_IMAGE}`").
+# Variables like COMPOSE_PROJECT_NAME are also read from here.
+# The env_file: directive only loads vars into container environment.
+#
+# To change settings, edit: ops/env/.env or ops/env/.env.$script:stageName
+# =============================================================================
+
+# --- From ops/env/.env (shared) ---
+"@
+    $sharedContent = Get-Content $sharedEnvFile -Raw
+    $stageHeader = "`n# --- From ops/env/.env.$script:stageName (stage-specific) ---`n"
+    $stageContent = Get-Content $stageEnvFile -Raw
+
+    $header + $sharedContent + $stageHeader + $stageContent | Set-Content $composeEnvCopy
+    Write-Host "✓ Merged .env + .env.$script:stageName to compose/.env"
 }
 
 exit 0
