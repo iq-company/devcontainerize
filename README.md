@@ -267,6 +267,15 @@ bench ops release-dist -s prod  # Filter by stage
 ```
 </details>
 
+### Build Hooks & Cleanup
+
+For customizing the Docker build process (removing optional packages, cleaning up files), see **[`ops/build/BUILD_HOOKS.md`](ops/build/BUILD_HOOKS.md)**.
+
+Key concepts:
+- **`{app_name}-patches.sh`**: Remove optional packages from `pyproject.toml` BEFORE pip install
+- **`ops_release_cleanup` hooks**: Clean up files in release images
+- **`context: only_during_build`**: Run hooks only during Docker build, not manually
+
 ### Stage Configuration
 
 Stages define runtime environments and their relationship to Docker build targets.

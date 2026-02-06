@@ -1,12 +1,15 @@
 #!/usr/bin/bash
 #
-# Docker Patches - Applied during image build after bench setup
+# Docker Patches - Applied during image build AFTER bench setup & requirements
 #
-# This script runs AFTER bench is set up, with all apps installed.
+# This script runs AFTER all apps and dependencies are installed.
 # Use it to:
-#   - Inject monkey patches into Python packages
+#   - Inject monkey patches into installed Python packages
 #   - Customize branding (app name in UI)
-#   - Install optional models (NLP, ML, etc.)
+#   - Download optional models (NLP, ML, etc.) that aren't pip packages
+#
+# NOTE: To remove optional pip packages BEFORE installation, create a
+#       {app_name}-patches.sh script instead. See BUILD_HOOKS.md for details.
 #
 # Called from: Dockerfile.dev (RUN docker-patches.sh)
 # Working directory: /home/{{ image_user }}/bench
