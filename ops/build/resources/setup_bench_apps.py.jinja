@@ -245,6 +245,13 @@ def main():
             print(f"Running app patches: {app_patches}")
             run_command(["bash", str(app_patches)], cwd=str(home_dir))
 
+        # Run app-specific pyproject patches BEFORE installing requirements
+        # This allows removing optional packages from pyproject.toml based on ENABLE_* env vars
+        pyproject_patches = bench_dir / "apps" / local_app_name / "ops" / "build" / "resources" / f"{local_app_name}-patches.sh"
+        if pyproject_patches.exists():
+            print(f"Running pyproject patches: {pyproject_patches}")
+            run_command(["bash", str(pyproject_patches)], cwd=str(bench_dir))
+
         # Setup requirements
         print("Installing Python requirements...")
         run_command(["bench", "setup", "requirements", "--python"], cwd=str(bench_dir))
