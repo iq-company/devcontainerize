@@ -1,0 +1,14 @@
+# Debian variant configuration for dev image
+# Use: bench ops dockerfile create -v debian
+# Or:  bench ops dockerfile create -v debian-trixie
+
+debian_base: bookworm
+
+# Subvariants (use --variant debian-SUBVARIANT)
+subvariants:
+  bookworm:
+    debian_base: bookworm
+  trixie:
+    debian_base: trixie
+  bullseye:
+    debian_base: bullseye

@@ -21,6 +21,24 @@ build_args:
   IQ_BRAND_NAME: "{{ project_name }}"
   IQ_SITE_NAME: "{{ site_name }}"
 
+# --- Dockerfile Generation (baker gen-docker) ---
+# Path to recipes directory (all .yml files are merged alphabetically)
+# Files: 00-base.yml, 10-builder.yml, 20-dev.yml, 30-release.yml, 99-custom.yml
+recipes_dir: ops/build/docker-templates/recipes
+
+# Default values for Dockerfile templates (can be overridden via --set)
+# Note: Project-specific values (app_name, image_user, etc.) are automatically
+#       loaded from .copier-answers.yml
+dockerfile_defaults:
+  # Version defaults for Debian variant
+  python_version: "3.12"
+  debian_base: "bookworm"
+  node_version: "20"
+  pg_version: "16.4"
+  nginx_version: "1.27.4"
+  # Uncomment for Alpine variant:
+  # alpine_version: "3.20"
+
 # Target definitions
 # Available tag functions:
 #  - env("VAR","default")         -> Environment variable
@@ -34,8 +52,12 @@ build_args:
 #  - concat(a,b,...)              -> String concatenation
 
 targets:
+  # Convention over Configuration:
+  #   Template:   docker-templates/{target}/Dockerfile.j2
+  #   Output:     docker/Dockerfile.{target}
+  # Only specify 'dockerfile' or 'dockerfile_template' to override convention.
+
   base:
-    dockerfile: ops/build/docker/Dockerfile.base
     context: .
     deps: []
     hash_mode: self
@@ -49,7 +71,6 @@ targets:
     latest: true
 
   builder:
-    dockerfile: ops/build/docker/Dockerfile.builder
     context: .
     deps: [base]
     hash_mode: self+deps
@@ -61,7 +82,6 @@ targets:
       BASE_IMAGE_SOURCE: {{ image_prefix }}-base:${depChecksum8("base")}
 
   dev:
-    dockerfile: ops/build/docker/Dockerfile.dev
     context: .
     deps: [base, builder]
     hash_mode: self+deps
@@ -72,6 +92,8 @@ targets:
       - ops/build/resources/frappe-patches.sh
       - ops/build/resources/app-patches.sh
     image: {{ image_prefix }}-dev
+    # Note: Only VERSION determines rebuild check (first tag is used for existence check).
+    # Changes to deps (base, builder) don't trigger rebuild - use --force or bump VERSION.
     tags:
       - ${readFile("ops/build/VERSION")}
       - latest
@@ -80,7 +102,6 @@ targets:
       BASE_IMAGE_SOURCE: {{ image_prefix }}-base:${depChecksum8("base")}
 
   release:
-    dockerfile: ops/build/docker/Dockerfile.release
     context: .
     deps: [base, dev]
     hash_mode: self+deps
@@ -89,32 +110,13 @@ targets:
       - ops/build/resources/container-reduce.sh
       - ops/build/resources/call_root_iq_release_dist.py
     image: {{ image_prefix }}-release
+    # Note: Only VERSION determines rebuild check (first tag is used for existence check).
+    # Changes to deps (base, dev) don't trigger rebuild - use --force or bump VERSION.
     tags:
       - ${readFile("ops/build/VERSION")}
       - latest
     build_args:
       BASE_IMAGE_SOURCE: {{ image_prefix }}-base:${depChecksum8("base")}
-      DEV_IMAGE_SOURCE: {{ image_prefix }}-dev:${readFile("ops/build/VERSION")}
-
-  # Alpine-based worker image (experimental)
-  # Smaller image size but limited functionality:
-  # - No wkhtmltopdf (no PDF generation)
-  # - No nginx (use external reverse proxy)
-  # Suitable for: background workers, scheduler, CLI operations
-  release-alpine:
-    dockerfile: ops/build/docker/Dockerfile.release-alpine
-    context: .
-    deps: [dev]
-    hash_mode: self+deps
-    hash_files:
-      - ops/build/docker/Dockerfile.release-alpine
-      - ops/build/resources/container-reduce.sh
-      - ops/build/resources/call_root_iq_release_dist.py
-    image: {{ image_prefix }}-release-alpine
-    tags:
-      - ${readFile("ops/build/VERSION")}
-      - latest
-    build_args:
       DEV_IMAGE_SOURCE: {{ image_prefix }}-dev:${readFile("ops/build/VERSION")}
 
 # Bundles for convenient multi-target builds

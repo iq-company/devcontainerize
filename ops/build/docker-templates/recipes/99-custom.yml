@@ -1,0 +1,35 @@
+# =============================================================================
+# Custom Recipes - User-defined overrides and additions
+# =============================================================================
+# This file is NOT updated by copier (in _skip_if_exists).
+# Add your own recipes here or override existing ones.
+#
+# NAMING:
+# - Files are loaded alphabetically (00-, 10-, 20-, ...)
+# - Higher numbers override lower numbers
+# - This file (99-) loads last and can override anything
+#
+# EXAMPLE - Override an existing recipe:
+#   recipes:
+#     install_base_packages_raw:
+#       debian: |
+#         apt-get update && apt-get install -y curl vim htop
+#
+# EXAMPLE - Add a new recipe:
+#   recipes:
+#     install_my_tool:
+#       debian: |
+#         RUN apt-get install -y my-tool
+#       alpine: |
+#         RUN apk add my-tool
+#
+# EXAMPLE - Add variant-specific override:
+#   recipes:
+#     my_recipe:
+#       _default: |
+#         echo "default implementation"
+#       alpine: |
+#         echo "alpine-specific implementation"
+# =============================================================================
+
+recipes: {}

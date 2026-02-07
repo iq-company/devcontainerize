@@ -5,6 +5,9 @@ Usage:
     bench ops update                     # Update from template
     bench ops version                    # Show version
     bench ops version --bump             # Bump version
+    bench ops dockerfile                 # Show Dockerfile status and available variants
+    bench ops dockerfile create          # Create Dockerfiles from templates
+    bench ops dockerfile update          # Regenerate existing Dockerfiles
     bench ops build                      # Show build plan
     bench ops build --images             # Build Docker images
     bench ops run-tests                  # Run tests
@@ -166,12 +169,18 @@ def version_cmd(bump: bool, major: bool, feature: bool, commit: bool):
 # =============================================================================
 
 @ops.command("build")
-@click.option("-i", "--images", is_flag=True, help="Build Docker images (default: show plan)")
-@click.option("-t", "--targets", multiple=True, help="Specific targets to build")
+@click.option("-a", "--all", "build_all", is_flag=True, help="Build all targets")
+@click.option("-t", "--targets", multiple=True, help="Specific targets to build (implies build)")
 @click.option("-p", "--push", is_flag=True, help="Push images after building")
-@click.option("-f", "--force", is_flag=True, help="Force rebuild")
-def build_cmd(images: bool, targets: tuple, push: bool, force: bool):
-    """Show build plan or build Docker images."""
+@click.option("-f", "--force", is_flag=True, help="Force rebuild (implies build)")
+def build_cmd(build_all: bool, targets: tuple, push: bool, force: bool):
+    """Show build plan or build Docker images.
+
+    Without options: shows build plan with available commands.
+    With -t TARGET: builds specific target(s).
+    With -a: builds all targets.
+    With -f: forces rebuild of specified or all targets.
+    """
     app_root = get_app_root()
     settings = app_root / "ops" / "build" / "build-settings.yml"
 
@@ -179,7 +188,10 @@ def build_cmd(images: bool, targets: tuple, push: bool, force: bool):
         click.echo(f"❌ Build settings not found at {settings}")
         sys.exit(1)
 
-    if images:
+    # Determine if we should build: -a, -t, or -f implies building
+    should_build = build_all or targets or force
+
+    if should_build:
         # Build images
         cmd = [sys.executable, "-m", "baker_cli", "build", "--settings", str(settings)]
 
@@ -192,14 +204,236 @@ def build_cmd(images: bool, targets: tuple, push: bool, force: bool):
             if targets:
                 for t in targets:
                     cmd.extend(["--force", t])
+            elif build_all:
+                # Force all targets - need to get target list from settings
+                import yaml
+                with open(settings) as f:
+                    cfg = yaml.safe_load(f)
+                for t in cfg.get("targets", {}).keys():
+                    cmd.extend(["--force", t])
             else:
-                click.echo("⚠️  --force requires --targets to specify which targets to force rebuild")
-                sys.exit(1)
-    else:
-        # Show plan (default)
-        cmd = [sys.executable, "-m", "baker_cli", "plan", "--settings", str(settings)]
+                click.echo("⚠️  --force without -t or -a: forcing all targets")
+                import yaml
+                with open(settings) as f:
+                    cfg = yaml.safe_load(f)
+                for t in cfg.get("targets", {}).keys():
+                    cmd.extend(["--force", t])
 
+        result = subprocess.run(cmd, cwd=app_root)
+        sys.exit(result.returncode)
+    else:
+        # Show plan with helpful commands
+        cmd = [sys.executable, "-m", "baker_cli", "plan", "--settings", str(settings)]
+        result = subprocess.run(cmd, cwd=app_root)
+
+        if result.returncode == 0:
+            click.echo("")
+            click.echo("📋 Build commands:")
+            click.echo("   bench ops build -a           Build all targets")
+            click.echo("   bench ops build -t TARGET    Build specific target")
+            click.echo("   bench ops build -t TARGET -f Force rebuild target")
+            click.echo("   bench ops build -a -f        Force rebuild all")
+            click.echo("   bench ops build -a -p        Build and push to registry")
+
+        sys.exit(result.returncode)
+
+
+# =============================================================================
+# Dockerfile Commands
+# =============================================================================
+
+@ops.group(invoke_without_command=True)
+@click.pass_context
+def dockerfile(ctx):
+    """Manage Dockerfiles (generate from templates)."""
+    # Show status if no subcommand given
+    if ctx.invoked_subcommand is None:
+        ctx.invoke(dockerfile_ls)
+
+
+@dockerfile.command("ls")
+def dockerfile_ls():
+    """Show Dockerfile status and available variants."""
+    app_root = get_app_root()
+    docker_dir = app_root / "ops" / "build" / "docker"
+    templates_dir = app_root / "ops" / "build" / "docker-templates"
+    settings_file = app_root / "ops" / "build" / "build-settings.yml"
+    copier_answers_file = app_root / ".copier-answers.yml"
+
+    # Load settings to get targets and defaults
+    targets = []
+    dockerfile_defaults = {}
+    if settings_file.exists():
+        with open(settings_file) as f:
+            settings = yaml.safe_load(f)
+            targets = list(settings.get("targets", {}).keys())
+            dockerfile_defaults = settings.get("dockerfile_defaults", {})
+
+    # Load copier answers (project-specific values)
+    copier_answers = {}
+    if copier_answers_file.exists():
+        with open(copier_answers_file) as f:
+            data = yaml.safe_load(f) or {}
+            copier_answers = {k: v for k, v in data.items() if not k.startswith("_") and v is not None}
+
+    # Merge defaults
+    merged_defaults = {**copier_answers, **dockerfile_defaults}
+
+    click.echo("📦 Dockerfiles:")
+    click.echo(f"   Output:    {docker_dir.relative_to(app_root)}/")
+    click.echo(f"   Templates: {templates_dir.relative_to(app_root)}/")
+    click.echo("")
+
+    # Check each target
+    click.echo("   Target      Dockerfile                    Template")
+    click.echo("   " + "-" * 60)
+
+    for target in targets:
+        dockerfile = docker_dir / f"Dockerfile.{target}"
+        template = templates_dir / target / "Dockerfile.j2"
+
+        df_status = "✓" if dockerfile.exists() else "✗"
+        tpl_status = "✓" if template.exists() else "✗"
+
+        df_name = f"Dockerfile.{target}"
+        tpl_name = f"{target}/Dockerfile.j2"
+
+        click.echo(f"   {target:<10} [{df_status}] {df_name:<25} [{tpl_status}] {tpl_name}")
+
+    # Collect variants with subvariants
+    click.echo("")
+    click.echo("🎨 Available variants:")
+
+    variants_info = {}  # {variant: {"complete": bool, "missing": []}}
+
+    for target in targets:
+        variants_dir = templates_dir / target / "variants"
+        if variants_dir.exists():
+            for f in variants_dir.glob("*.yml"):
+                base_variant = f.stem
+                if base_variant not in variants_info:
+                    variants_info[base_variant] = _check_variant_defaults(base_variant, merged_defaults)
+
+                # Check for subvariants
+                with open(f) as vf:
+                    vconfig = yaml.safe_load(vf) or {}
+                    for sub in vconfig.get("subvariants", {}).keys():
+                        full_variant = f"{base_variant}-{sub}"
+                        if full_variant not in variants_info:
+                            variants_info[full_variant] = _check_variant_defaults(full_variant, merged_defaults)
+
+    if variants_info:
+        for v in sorted(variants_info.keys()):
+            info = variants_info[v]
+            if info["complete"]:
+                click.echo(f"   ✓ {v}")
+            else:
+                missing_str = ", ".join(info["missing"])
+                click.echo(f"   ✗ {v}  (missing: {missing_str})")
+    else:
+        click.echo("   (none found - using default: debian)")
+
+    # Show defaults status
+    click.echo("")
+    click.echo("⚙️  Defaults (from .copier-answers.yml + build-settings.yml):")
+    important_keys = ["app_name", "image_user", "python_version", "debian_base", "alpine_version"]
+    for key in important_keys:
+        val = merged_defaults.get(key)
+        if val:
+            click.echo(f"   {key}: {val}")
+        else:
+            click.echo(f"   {key}: (not set)")
+
+    # Show commands
+    click.echo("")
+    click.echo("📝 Commands:")
+    click.echo("   bench ops dockerfile create             # Create all (debian)")
+    click.echo("   bench ops dockerfile create -v alpine   # Create for Alpine")
+    click.echo("   bench ops dockerfile update             # Regenerate existing")
+    click.echo("")
+    click.echo(f"   To delete: rm {docker_dir.relative_to(app_root)}/Dockerfile.*")
+
+
+def _check_variant_defaults(variant: str, defaults: dict) -> dict:
+    """Check if all required defaults for a variant are present."""
+    base_variant = variant.split("-")[0] if "-" in variant else variant
+
+    common = ["python_version", "node_version"]
+
+    if base_variant == "debian":
+        required = common + ["debian_base"]
+    elif base_variant == "alpine":
+        required = common + ["alpine_version"]
+    else:
+        required = common
+
+    missing = [k for k in required if k not in defaults or defaults.get(k) is None]
+    return {"complete": len(missing) == 0, "missing": missing}
+
+
+@dockerfile.command("create")
+@click.option("-v", "--variant", default="debian", help="Platform variant (debian, alpine, ...)")
+@click.option("-t", "--targets", multiple=True, help="Specific targets (default: all)")
+@click.option("--dry-run", is_flag=True, help="Preview without writing")
+@click.option("--diff", is_flag=True, help="Show diff of changes")
+def dockerfile_create(variant: str, targets: tuple, dry_run: bool, diff: bool):
+    """Create Dockerfiles from templates.
+
+    Generates Dockerfiles in ops/build/docker/ from templates.
+
+    Examples:
+        bench ops dockerfile create               # Create all (debian)
+        bench ops dockerfile create -v alpine    # Create for Alpine
+        bench ops dockerfile create -t dev       # Create specific target
+    """
+    _run_dockerfile_gen(variant, targets, dry_run, diff, "Creating")
+
+
+@dockerfile.command("update")
+@click.option("-v", "--variant", help="Platform variant (default: detect from existing)")
+@click.option("-t", "--targets", multiple=True, help="Specific targets (default: all)")
+@click.option("--dry-run", is_flag=True, help="Preview without writing")
+@click.option("--diff", is_flag=True, help="Show diff of changes")
+def dockerfile_update(variant: str, targets: tuple, dry_run: bool, diff: bool):
+    """Regenerate existing Dockerfiles.
+
+    Use after updating templates or recipes.
+
+    Examples:
+        bench ops dockerfile update              # Regenerate all
+        bench ops dockerfile update -t dev       # Regenerate specific target
+    """
+    # Default to debian if no variant specified
+    if not variant:
+        variant = "debian"
+
+    _run_dockerfile_gen(variant, targets, dry_run, diff, "Updating")
+
+
+def _run_dockerfile_gen(variant: str, targets: tuple, dry_run: bool, diff: bool, action: str):
+    """Internal helper to run baker gen-docker."""
+    app_root = get_app_root()
+    settings_file = app_root / "ops" / "build" / "build-settings.yml"
+
+    if not settings_file.exists():
+        click.echo(f"❌ Build settings not found: {settings_file}")
+        sys.exit(1)
+
+    cmd = [sys.executable, "-m", "baker_cli", "gen-docker", "--settings", str(settings_file)]
+    cmd.extend(["--variant", variant])
+
+    if targets:
+        cmd.extend(["--targets", ",".join(targets)])
+    if dry_run:
+        cmd.append("--dry-run")
+    if diff:
+        cmd.append("--diff")
+
+    click.echo(f"🔧 {action} Dockerfiles (variant: {variant})...")
     result = subprocess.run(cmd, cwd=app_root)
+
+    if result.returncode == 0:
+        click.echo(f"✅ Dockerfiles {action.lower()}d successfully")
     sys.exit(result.returncode)
 
 

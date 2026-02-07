@@ -1,0 +1,160 @@
+# =============================================================================
+# Frappe-specific Recipes
+# =============================================================================
+# These recipes extend baker-cli defaults for Frappe/ERPNext projects.
+# They are updated by copier update.
+#
+# All recipes contain pure docker commands (no RUN prefix).
+# The caller decides how to use them:
+#   recipe("name")      → outputs "RUN <commands>"
+#   recipe_raw("name")  → outputs just the commands (for combining in one layer)
+#
+# Exception: copy_* recipes contain COPY instructions (not shell commands).
+# =============================================================================
+
+recipes:
+  # --- Frappe base packages ---
+  install_base_packages:
+    debian: |
+      apt-get update && apt-get install --no-install-recommends -y \
+          wget gettext-base file \
+          libgl1-mesa-glx libglib2.0-0 \
+          wait-for-it jq
+    alpine: |
+      apk add --no-cache \
+          wget gettext file \
+          mesa-gl glib \
+          bash jq
+
+  # --- Frappe builder packages (DBMS-specific dev libraries) ---
+  install_builder_packages:
+    debian: |
+      apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y \
+          git-core make wget \
+          libjpeg-dev libgif-dev librsvg2-dev \
+          libffi-dev liblcms2-dev libtiff5-dev libwebp-dev \
+          redis-tools gcc \
+          libbz2-dev cmake libtool m4 automake build-essential \
+          {% if default_dbms == 'postgres' %}libpq-dev{% elif default_dbms == 'mariadb' %}libmariadb-dev{% else %}libsqlite3-dev{% endif %}
+    alpine: |
+      apk add --no-cache \
+          git make wget \
+          jpeg-dev giflib-dev librsvg-dev \
+          libffi-dev lcms2-dev tiff-dev libwebp-dev \
+          redis gcc musl-dev \
+          bzip2-dev cmake libtool m4 automake build-base \
+          {% if default_dbms == 'postgres' %}libpq-dev{% elif default_dbms == 'mariadb' %}mariadb-dev{% else %}sqlite-dev{% endif %}
+
+  # --- Compile DBMS client in builder stage (only postgres needs compilation) ---
+  compile_dbms:
+    debian: |
+      {%- if default_dbms == 'postgres' %}
+      wget https://ftp.postgresql.org/pub/source/v{{ '{{' }} pg_version {{ '}}' }}/postgresql-{{ '{{' }} pg_version {{ '}}' }}.tar.gz -O /tmp/postgresql.tar.gz; \
+      tar -xf /tmp/postgresql.tar.gz -C /tmp/; \
+      ln -s /tmp/postgresql-* /tmp/postgresql; \
+      cd /tmp/postgresql; \
+      ./configure --prefix=/tmp/psql --without-icu --without-server --with-ssl=openssl --without-readline --without-systemd --without-ldap; \
+      cd src/bin/psql; \
+      make && make install
+      {%- else %}
+      echo "No DBMS compilation needed for {{ default_dbms }}"
+      {%- endif %}
+    alpine: |
+      echo "Alpine uses packages, no DBMS compilation"
+
+  # --- Frappe dev dependencies (includes DBMS client) ---
+  install_frappe_deps:
+    debian: |
+      apt-get update && apt-get install -y --no-install-recommends \
+          git jq vim gcc libbz2-dev cmake libtool m4 automake \
+          build-essential wget libreadline-dev zlib1g-dev libssl-dev \
+          wkhtmltopdf xvfb libfontconfig \
+          {% if default_dbms == 'postgres' %}postgresql-client libpq5{% elif default_dbms == 'mariadb' %}mariadb-client libmariadb3{% else %}sqlite3{% endif %}
+    alpine: |
+      apk add --no-cache \
+          git jq vim gcc musl-dev bzip2-dev cmake libtool m4 automake \
+          make wget readline-dev zlib-dev openssl-dev \
+          {% if default_dbms == 'postgres' %}postgresql-client libpq{% elif default_dbms == 'mariadb' %}mariadb-client mariadb-connector-c{% else %}sqlite{% endif %}
+
+  # --- Setup bench apps ---
+  setup_bench_apps:
+    _default: |
+      python3 /opt/apps/{{ app_name }}/ops/build/resources/setup_bench_apps.py \
+          --frappe-ref "${FRAPPE_REF}" \
+          --frappe-path "${FRAPPE_PATH}" \
+          --custom-apps "${CUSTOM_APPS}" \
+          --local-app-path /opt/apps/{{ app_name }} \
+          --home-dir /home/{{ image_user }} \
+          --github-user "${GITHUB_USER}" \
+          --github-token "${GITHUB_TOKEN}" \
+          $([ "${PRODUCTION_BUILD}" = "true" ] && echo "--production")
+
+  # --- Docker patches (branding, etc.) ---
+  run_docker_patches:
+    _default: |
+      set -x; \
+      bash /home/{{ image_user }}/docker-patches.sh; \
+      chown -R ${IMAGE_USER}:${IMAGE_GROUP} /home/{{ image_user }}/bench/sites/; \
+      chmod -R g+rw /home/{{ image_user }}/bench/sites/; \
+      chmod -R g+rw /home/{{ image_user }}/bench/config; \
+      chmod -R g+rw /opt/nginx/
+
+  # --- Frappe cache cleanup ---
+  cleanup_frappe:
+    _default: |
+      rm -rf /home/{{ image_user }}/.cache/yarn \
+          /home/{{ image_user }}/.cache/uv \
+          /home/{{ image_user }}/.cache/pip \
+          /home/{{ image_user }}/.cache/huggingface \
+          /tmp/*
+
+  # --- Copy compiled DBMS client from builder (only for postgres) ---
+  # Note: This is a COPY instruction, not a shell command
+  copy_from_builder_dbms:
+    debian: |
+      {%- if default_dbms == 'postgres' %}
+      COPY --from=builder /tmp/psql/bin/psql /usr/local/bin/psql
+      COPY --from=builder /tmp/postgresql/src/interfaces/libpq/libpq.so* /lib/x86_64-linux-gnu/
+      {%- endif %}
+    alpine: ""
+
+  # Note: This is a COPY instruction, not a shell command
+  copy_from_builder_nginx:
+    debian: |
+      COPY --from=builder --chown=${IMAGE_USER}:${IMAGE_GROUP} /opt/nginx/ /opt/nginx/
+      COPY --from=builder --chown=${IMAGE_USER}:${IMAGE_GROUP} /opt/pcre2/* /opt/pcre2/
+    alpine: ""
+
+  # --- File permissions ---
+  fix_nginx_permissions:
+    _default: |
+      chown -R ${IMAGE_USER}:${IMAGE_GROUP} /run/nginx.pid ; \
+      mkdir -p /opt/nginx/client_body_temp /opt/nginx/proxy_temp; \
+      chmod 775 /opt/nginx/client_body_temp /opt/nginx/proxy_temp; \
+      chmod 775 /home/{{ image_user }}/bench/logs; \
+      chmod -R 664 /home/{{ image_user }}/bench/logs/*; \
+      find /home/{{ image_user }}/bench/sites_assets/ -type d -print0 | xargs -0 -r chmod 775 ; \
+      find /home/{{ image_user }}/bench/sites_assets/ -type f -print0 | xargs -0 -r chmod 644
+
+  # --- Build verification ---
+  verify_build:
+    _default: |
+      set -e; \
+      if [ ! -d "/home/{{ image_user }}/bench/apps/{{ app_name }}" ]; then \
+        echo "Missing app {{ app_name }}"; \
+        exit 1; \
+      fi; \
+      if ! grep -q "Starting {{ project_name }}" "/home/{{ image_user }}/bench/apps/frappe/frappe/desk/page/setup_wizard/setup_wizard.js"; then \
+        echo "docker-patches.sh might not have run completely"; \
+        exit 1; \
+      fi
+
+  # --- Release cleanup ---
+  cleanup_release:
+    _default: |
+      rm -rf /home/${IMAGE_USER}/.nvm/versions/node/v*/lib/node_modules/npm/node_modules/*; \
+      rm -rf /home/${IMAGE_USER}/.nvm/versions/node/v*/lib/node_modules/npm; \
+      rm -rf /home/${IMAGE_USER}/.nvm/versions/node/v*/lib/node_modules/corepack/shims/npm; \
+      rm -rf /home/${IMAGE_USER}/.nvm/versions/node/v*/lib/node_modules/corepack/shims/*/npm; \
+      rm -rf /home/${IMAGE_USER}/.nvm/versions/node/v*/bin/npm; \
+      /usr/local/bin/pip uninstall -y pip

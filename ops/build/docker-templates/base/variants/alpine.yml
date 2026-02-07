@@ -1,0 +1,8 @@
+# Alpine variant configuration for dev image
+# Use: bench ops dockerfile create -v alpine
+# Note: Alpine builds may have limited functionality (no wkhtmltopdf)
+
+alpine_version: "3.20"
+
+# Alpine-specific package names differ from Debian
+# These are handled by the recipes automatically
