@@ -45,8 +45,14 @@ COPY --from=cleaner /lib/x86_64-linux-gnu/libpq.so* /lib/x86_64-linux-gnu/
 
 # Copy only the cleaned files from the cleaner stage
 COPY --from=cleaner --chown=${IMAGE_USER}:${IMAGE_GROUP} /home/${IMAGE_USER}/bench /home/${IMAGE_USER}/bench
+{% if base_variant == "debian" %}
+# Debian: Copy compiled nginx and pcre2
 COPY --from=cleaner --chown=${IMAGE_USER}:${IMAGE_GROUP} /opt/nginx/ /opt/nginx/
 COPY --from=cleaner --chown=${IMAGE_USER}:${IMAGE_GROUP} /opt/pcre2/* /opt/pcre2/
+{% else %}
+# Alpine: nginx is installed via apk, just ensure directories exist
+RUN mkdir -p /var/lib/nginx && chown -R ${IMAGE_USER}:${IMAGE_GROUP} /var/lib/nginx
+{% endif %}
 
 ENV PATH="/home/${IMAGE_USER}/bench/env/bin:${PATH}"
 

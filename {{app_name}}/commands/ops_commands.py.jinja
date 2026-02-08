@@ -433,7 +433,8 @@ def _run_dockerfile_gen(variant: str, targets: tuple, dry_run: bool, diff: bool,
     result = subprocess.run(cmd, cwd=app_root)
 
     if result.returncode == 0:
-        click.echo(f"✅ Dockerfiles {action.lower()}d successfully")
+        action_past = "created" if action == "Creating" else "updated"
+        click.echo(f"✅ Dockerfiles {action_past} successfully")
     sys.exit(result.returncode)
 
 
