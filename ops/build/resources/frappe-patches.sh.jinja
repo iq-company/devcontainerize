@@ -15,10 +15,42 @@
 # Called from: setup_bench_apps.py
 # Working directory: /home/{{ image_user }}
 # Frappe location: /tmp/bench/apps/frappe (or $CWD/apps/frappe if running locally)
-# (call it locally with: `bash apps/iq_core/delivery/resources/frappe-patches.sh`)
+# (call it locally with: `bash apps/{{ app_name }}/ops/build/resources/frappe-patches.sh`)
 
 set -e
 
+# =============================================================================
+# Helper Functions
+# =============================================================================
+
+# Remove a Python dependency from pyproject.toml
+# Usage: remove_py_dep "package-name"
+remove_py_dep() {
+    local lib="$1"
+    sed -Ei "/$lib[[:space:]]*[~>=\!]+/d" "$FRAPPE_TARGET_DIR/pyproject.toml"
+}
+
+# Remove import lines matching a pattern from a file
+# Usage: remove_import "pattern" "file"
+remove_import() {
+    local pattern="$1"
+    local file="$2"
+    sed -i "/$pattern/d" "$file"
+}
+
+# Add or update a resolution in package.json (for CVE fixes)
+# Usage: add_npm_resolution "package-name" "version"
+add_npm_resolution() {
+    local package="$1"
+    local version="$2"
+    jq ".resolutions = (.resolutions // {}) + {\"$package\": \"$version\"}" \
+        "$FRAPPE_TARGET_DIR/package.json" > tmp.$$.json && \
+        mv tmp.$$.json "$FRAPPE_TARGET_DIR/package.json"
+}
+
+# =============================================================================
+# Determine Frappe Directory
+# =============================================================================
 
 CWD="$(pwd)"
 
@@ -33,25 +65,73 @@ fi
 
 echo "Patching Frappe at: $FRAPPE_TARGET_DIR"
 
-# Example: Remove unused Frappe dependencies for your setup
+# Get the directory where this script resides (for resource files like jquery)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# =============================================================================
+# 1. Remove Unused Python Dependencies
+# =============================================================================
+# Uncomment and customize the libraries you want to remove:
+#
+# echo "Removing unused Python dependencies..."
 #
 # unneeded_libs=(
-# 	"ldap3"
-# 	"terminaltables"
-# 	"dropbox"
-# 	"google-api-python-client"
-# 	"google-auth-oauthlib"
-# 	"google-auth"
-# 	"posthog"
-# 	"sentry-sdk"
+#     "PyQRCode"          # QR code generation
+#     "ldap3"             # LDAP authentication
+#     "terminaltables"    # Terminal table formatting
+#     "dropbox"           # Dropbox integration
+#     "google-api-python-client"  # Google APIs
+#     "google-auth-oauthlib"      # Google OAuth
+#     "google-auth"               # Google authentication
+#     "posthog"           # Telemetry/analytics
+#     "maxminddb-geolite2"  # GeoIP lookup
+#     "sentry-sdk"        # Error tracking
+#     "vobject"           # vCard/iCalendar support
+#     "weasyprint"        # PDF generation (alternative to wkhtmltopdf)
 # )
 #
 # for lib in "${unneeded_libs[@]}"; do
-#     sed -Ei "/$lib[[:space:]]*[~>=\!]+/d" $FRAPPE_TARGET_DIR/pyproject.toml
+#     remove_py_dep "$lib"
 # done
 
-# Example: Fix a CVE in package.json
-# jq '.resolutions = (.resolutions // {}) + {"vulnerable-pkg": "^2.0.0"}' \
-#     "$FRAPPE_TARGET_DIR/package.json" > tmp.$$.json && mv tmp.$$.json "$FRAPPE_TARGET_DIR/package.json"
+# =============================================================================
+# 2. Patch Removed Dependencies (prevent import errors)
+# =============================================================================
+# When removing dependencies, you may need to patch import statements
+# to prevent errors when Frappe tries to load the modules.
+#
+# Example - Remove LDAP imports (multiline):
+# sed -i '/^import ldap3/d; /^from ldap3[^(]*$/d; /^from ldap3[^(]*(/,/^[[:space:]]*)/d' \
+#     "$FRAPPE_TARGET_DIR/frappe/integrations/doctype/ldap_settings/ldap_settings.py"
+#
+# Example - Remove single import line:
+# remove_import "import dropbox" \
+#     "$FRAPPE_TARGET_DIR/frappe/integrations/doctype/dropbox_settings/dropbox_settings.py"
+#
+# Example - Remove Google integrations:
+# remove_import "from google" "$FRAPPE_TARGET_DIR/frappe/integrations/google_oauth.py"
+#
+# Example - Remove Sentry:
+# remove_import "from frappe.utils.sentry" "$FRAPPE_TARGET_DIR/frappe/utils/error.py"
+# remove_import "capture_exception" "$FRAPPE_TARGET_DIR/frappe/utils/error.py"
+
+# =============================================================================
+# 4. JavaScript/Node Patches
+# =============================================================================
+# Example - Remove a dependency from package.json:
+# sed -i '/@vue\/component-compiler/d' "$FRAPPE_TARGET_DIR/package.json"
+#
+# Example - Remove postinstall script:
+# jq 'del(.scripts.postinstall)' "$FRAPPE_TARGET_DIR/package.json" > \
+#     "$FRAPPE_TARGET_DIR/package.tmp.json" && \
+#     mv "$FRAPPE_TARGET_DIR/package.tmp.json" "$FRAPPE_TARGET_DIR/package.json"
+
+# =============================================================================
+# 5. CVE Fixes (npm resolutions)
+# =============================================================================
+# Use add_npm_resolution to pin vulnerable packages to fixed versions:
+#
+# add_npm_resolution "@adobe/css-tools" "4.3.3"
+# add_npm_resolution "postcss" "8.4.47"
 
 echo "Frappe patches applied."
