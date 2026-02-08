@@ -61,6 +61,11 @@ COPY --chown=${IMAGE_USER}:${IMAGE_GROUP} --chmod=0644 ops/build/resources/nginx
 COPY --chown=${IMAGE_USER}:${IMAGE_GROUP} --chmod=0755 ops/build/resources/nginx/nginx-entrypoint.sh /usr/local/bin/nginx-entrypoint.sh
 COPY --chown=${IMAGE_USER}:${IMAGE_GROUP} ops/build/resources/nginx/nginx.conf /templates/nginx/nginx.conf
 COPY --chown=${IMAGE_USER}:${IMAGE_GROUP} ops/build/resources/gunicorn/gunicorn.conf.py /srv/gunicorn.conf.py
+{% if base_variant == "alpine" %}
+# Alpine: wait-for-it not available as package, use local copy
+# Source: https://github.com/vishnubob/wait-for-it (MIT License)
+COPY --chmod=0755 ops/build/resources/wait-for-it.sh /usr/local/bin/wait-for-it
+{% endif %}
 
 USER ${IMAGE_USER}
 WORKDIR /home/${IMAGE_USER}
