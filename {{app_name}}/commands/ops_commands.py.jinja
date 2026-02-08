@@ -442,6 +442,187 @@ def _run_dockerfile_gen(variant: str, targets: tuple, dry_run: bool, diff: bool,
 # Run Tests Command
 # =============================================================================
 
+def _get_test_site_name(base_site: str) -> str:
+    """Get test site name from base site name."""
+    if base_site.startswith("test_"):
+        return base_site
+    return f"test_{base_site}"
+
+
+def _test_site_exists(test_site: str) -> bool:
+    """Check if test site directory exists."""
+    sites_path = get_bench_root() / "sites"
+    return (sites_path / test_site).exists()
+
+
+def _test_stage_exists(stage_name: str) -> bool:
+    """Check if stage exists in stages.yml."""
+    app_root = get_app_root()
+    stages_file = app_root / "ops" / "build" / "stages.yml"
+
+    if not stages_file.exists():
+        return False
+
+    import yaml
+    with open(stages_file) as f:
+        config = yaml.safe_load(f) or {}
+
+    stages = config.get("stages", {})
+    return stage_name in stages
+
+
+def _test_env_file_exists(stage_name: str) -> bool:
+    """Check if .env.{stage} file exists."""
+    app_root = get_app_root()
+    env_file = app_root / "ops" / "env" / f".env.{stage_name}"
+    return env_file.exists()
+
+
+def _add_stage_to_stages_yml(stage_name: str, target: str = "dev") -> bool:
+    """Add a new stage to stages.yml."""
+    app_root = get_app_root()
+    stages_file = app_root / "ops" / "build" / "stages.yml"
+
+    if not stages_file.exists():
+        click.echo(f"❌ stages.yml not found at {stages_file}", err=True)
+        return False
+
+    import yaml
+    with open(stages_file) as f:
+        config = yaml.safe_load(f) or {}
+
+    if "stages" not in config:
+        config["stages"] = {}
+
+    # Add test stage configuration
+    config["stages"][stage_name] = {
+        "target": target,
+        "env_file": f".env.{stage_name}",
+        "profiles": ["db", "redis"]
+    }
+
+    # Write back with preserved formatting (add as comment block first)
+    # For simplicity, we append the new stage as YAML at the end
+    with open(stages_file, "a") as f:
+        f.write(f"\n  # Test stage - for running automated tests\n")
+        f.write(f"  {stage_name}:\n")
+        f.write(f"    target: {target}\n")
+        f.write(f"    env_file: .env.{stage_name}\n")
+        f.write(f"    profiles:\n")
+        f.write(f"      - db\n")
+        f.write(f"      - redis\n")
+
+    click.echo(f"✅ Added '{stage_name}' stage to stages.yml")
+    return True
+
+
+def _create_stage_env_file(stage_name: str, dbms: str = "postgres") -> bool:
+    """Create .env.{stage} file using init_env_files script."""
+    app_root = get_app_root()
+    init_script = app_root / "ops" / "scripts" / "devcontainer" / "init_env_files"
+
+    if not init_script.exists():
+        click.echo(f"❌ init_env_files not found at {init_script}", err=True)
+        return False
+
+    click.echo(f"📦 Creating .env.{stage_name} file...")
+
+    env = os.environ.copy()
+    env["ENV_FILE_SUFFIX"] = f".{stage_name}"
+    # Enable DDL mode for test stages
+    if stage_name == "test" or stage_name.startswith("test_"):
+        env["ENABLE_DDL"] = "1"
+
+    result = subprocess.run(
+        ["bash", str(init_script), dbms],
+        env=env,
+        cwd=str(app_root),
+    )
+
+    if result.returncode == 0:
+        click.echo(f"✅ Created .env.{stage_name}")
+        return True
+    else:
+        click.echo(f"❌ Failed to create .env.{stage_name}", err=True)
+        return False
+
+
+def _create_test_site(test_site: str, dbms: str = "postgres") -> bool:
+    """Create test site using init_site.sh with test-specific settings."""
+    app_root = get_app_root()
+
+    # Get base settings from .env
+    env_file = app_root / "ops" / "env" / ".env"
+    env_dev_file = app_root / "ops" / "env" / ".env.dev"
+
+    # Build environment for test site (DDL mode - no DB_USER)
+    import secrets
+    import string
+
+    def random_string(length=5):
+        return ''.join(secrets.choice(string.ascii_lowercase) for _ in range(length))
+
+    def random_password(length=16):
+        chars = string.ascii_letters + string.digits
+        return ''.join(secrets.choice(chars) for _ in range(length))
+
+    # DDL mode: DB_NAME = DB_SUPER_USER (same as in init_env_files)
+    db_super_user = f"test_su_{random_string()}"
+
+    test_env = {
+        "IQ_SITE_NAME": test_site,
+        "IQ_ADMIN_PW": "admin",  # Simple password for test site
+        "DBMS": dbms,
+        "DB_HOST": "db",
+        "DB_PORT": "5432" if dbms == "postgres" else "3306",
+        "DB_NAME": db_super_user,  # DDL mode: DB_NAME = DB_SUPER_USER
+        "DB_SCHEMA": f"{test_site}_schema" if dbms == "postgres" else "",
+        "DB_SUPER_USER": db_super_user,
+        "DB_SUPER_USER_PW": random_password(),
+        "DB_ROOT_PASSWORD": os.environ.get("DB_ROOT_PASSWORD", ""),
+        # DDL mode - no separate DB_USER
+        "DB_USER": "",
+        "DB_PASSWORD": "",
+        "REDIS_CACHE": "redis-cache:6379",
+        "REDIS_QUEUE": "redis-queue:6379",
+        "SOCKETIO_PORT": "9000",
+        "IMAGE_USER": os.environ.get("IMAGE_USER", "{{ image_user }}"),
+    }
+
+    # Load existing env vars that we need
+    if env_dev_file.exists():
+        with open(env_dev_file) as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith("#") and "=" in line:
+                    key, value = line.split("=", 1)
+                    if key == "DB_ROOT_PASSWORD" and not test_env.get("DB_ROOT_PASSWORD"):
+                        test_env["DB_ROOT_PASSWORD"] = value.strip('"\'')
+
+    print(f"\n📦 Creating test site: {test_site}")
+    print(f"   Database: {test_env['DB_NAME']}")
+    print(f"   Schema: {test_env.get('DB_SCHEMA', 'N/A')}")
+    print(f"   Super User: {test_env['DB_SUPER_USER']}")
+    print(f"   Mode: DDL (full privileges)")
+
+    # Run init_site.sh with test environment
+    init_script = app_root / "ops" / "scripts" / "runtime" / "init_site.sh"
+    if not init_script.exists():
+        click.echo(f"❌ init_site.sh not found at {init_script}", err=True)
+        return False
+
+    env = os.environ.copy()
+    env.update(test_env)
+
+    result = subprocess.run(
+        ["bash", str(init_script)],
+        env=env,
+        cwd=str(get_bench_root()),
+    )
+
+    return result.returncode == 0
+
+
 @ops.command("run-tests")
 @click.option("-a", "--app", "app_filter", help="Run tests for a specific app")
 @click.option("-m", "--module", help="Run tests for a specific module")
@@ -449,14 +630,83 @@ def _run_dockerfile_gen(variant: str, targets: tuple, dry_run: bool, diff: bool,
 @click.option("-t", "--test", "test_filter", help="Run a specific test function")
 @click.option("-s", "--section", help="Run tests for a specific section")
 @click.option("-c", "--continue-on-error", is_flag=True, help="Continue running tests after failures")
+@click.option("-y", "--yes", is_flag=True, help="Auto-confirm test site creation")
+@click.option("--site", "test_site_override", help="Use specific test site name")
 @pass_context
-def run_tests_cmd(context, app_filter, module, doctype, test_filter, section, continue_on_error):
-    """Run tests defined in ops_tests hooks."""
-    site_name = context.sites[0] if context.sites else None
-    if not site_name:
-        raise frappe.SiteNotSpecifiedError
+def run_tests_cmd(context, app_filter, module, doctype, test_filter, section, continue_on_error, yes, test_site_override):
+    """Run tests defined in iq_tests and ops_tests hooks.
 
-    frappe.init(site=site_name)
+    This command will:
+    1. Check all test prerequisites (stage, env file, site)
+    2. Offer to create missing components in one confirmation
+    3. Run all tests defined in iq_tests and ops_tests hooks
+    """
+    # Determine DBMS from environment (needed for multiple steps)
+    dbms = os.environ.get("DBMS", "postgres")
+    test_stage = "test"
+
+    # Determine test site name
+    base_site = context.sites[0] if context.sites else os.environ.get("IQ_SITE_NAME", "{{ site_name }}")
+    test_site = test_site_override if test_site_override else _get_test_site_name(base_site)
+
+    # =========================================================================
+    # Check all prerequisites and collect missing components
+    # =========================================================================
+    missing = []
+
+    has_stage = _test_stage_exists(test_stage)
+    has_env = _test_env_file_exists(test_stage)
+    has_site = _test_site_exists(test_site)
+
+    if not has_stage:
+        missing.append(f"Stage '{test_stage}' in stages.yml")
+    if not has_env:
+        missing.append(f"Environment file '.env.{test_stage}'")
+    if not has_site:
+        missing.append(f"Test site '{test_site}'")
+
+    # =========================================================================
+    # Show status and prompt for creation if needed
+    # =========================================================================
+    click.echo("\n📋 Test prerequisites:")
+    click.echo(f"   {'✓' if has_stage else '✗'} Stage '{test_stage}' in stages.yml")
+    click.echo(f"   {'✓' if has_env else '✗'} Environment file '.env.{test_stage}'")
+    click.echo(f"   {'✓' if has_site else '✗'} Test site '{test_site}'")
+
+    if missing:
+        click.echo(f"\n⚠️  Missing {len(missing)} component(s):")
+        for item in missing:
+            click.echo(f"   • {item}")
+
+        if not yes and not click.confirm("\nCreate missing components?", default=True):
+            click.echo("Aborted. Use --yes to auto-create.")
+            sys.exit(0)
+
+        click.echo("")
+
+        # Create missing components in order
+        if not has_stage:
+            if not _add_stage_to_stages_yml(test_stage, target="dev"):
+                click.echo(f"❌ Failed to add '{test_stage}' stage", err=True)
+                sys.exit(1)
+
+        if not has_env:
+            if not _create_stage_env_file(test_stage, dbms):
+                click.echo(f"❌ Failed to create '.env.{test_stage}'", err=True)
+                sys.exit(1)
+
+        if not has_site:
+            if not _create_test_site(test_site, dbms):
+                click.echo(f"❌ Failed to create test site '{test_site}'", err=True)
+                sys.exit(1)
+            click.echo(f"✅ Test site '{test_site}' created successfully.")
+
+        click.echo("")
+
+    # Initialize frappe with test site for running tests
+    frappe.init(site=test_site)
+
+    click.echo(f"\n🧪 Running tests on site: {test_site}\n")
 
     # Divider lines for better visibility
     app_divider = "\n" + "=" * 80 + "\n{:^80}\n" + "=" * 80
@@ -474,16 +724,18 @@ def run_tests_cmd(context, app_filter, module, doctype, test_filter, section, co
         if app_filter and app_filter != app_name:
             continue
 
-        # Get ops_tests hooks from the current app
-        app_ops_tests = frappe.get_hooks("ops_tests", app_name=app_name)
+        # Get tests from both iq_tests and ops_tests hooks (combine them)
+        app_iq_tests = frappe.get_hooks("iq_tests", app_name=app_name) or []
+        app_ops_tests = frappe.get_hooks("ops_tests", app_name=app_name) or []
+        all_tests = app_iq_tests + app_ops_tests
 
-        if not app_ops_tests:
+        if not all_tests:
             continue
 
         # Print app header with clear divider
         print(app_divider.format(f" TESTS FOR APP: {app_name.upper()} "))
 
-        for test_section in app_ops_tests:
+        for test_section in all_tests:
             # Only run specific section if requested
             if section and test_section.get("section") != section:
                 continue
