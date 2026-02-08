@@ -24,7 +24,7 @@ recipes:
       apk add --no-cache \
           wget gettext file \
           mesa-gl glib \
-          bash jq
+          bash jq coreutils curl
 
   # --- Frappe builder packages (DBMS-specific dev libraries) ---
   install_builder_packages:
@@ -74,6 +74,7 @@ recipes:
       apk add --no-cache \
           git jq vim gcc musl-dev bzip2-dev cmake libtool m4 automake \
           make wget readline-dev zlib-dev openssl-dev \
+          python3-dev linux-headers libffi-dev \
           {% if default_dbms == 'postgres' %}postgresql-client libpq{% elif default_dbms == 'mariadb' %}mariadb-client mariadb-connector-c{% else %}sqlite{% endif %}
 
   # --- Setup bench apps ---
@@ -91,13 +92,20 @@ recipes:
 
   # --- Docker patches (branding, etc.) ---
   run_docker_patches:
-    _default: |
+    debian: |
       set -x; \
-      bash /home/{{ image_user }}/docker-patches.sh; \
-      chown -R ${IMAGE_USER}:${IMAGE_GROUP} /home/{{ image_user }}/bench/sites/; \
-      chmod -R g+rw /home/{{ image_user }}/bench/sites/; \
-      chmod -R g+rw /home/{{ image_user }}/bench/config; \
+      bash /home/${IMAGE_USER}/docker-patches.sh; \
+      chown -R ${IMAGE_USER}:${IMAGE_GROUP} /home/${IMAGE_USER}/bench/sites/; \
+      chmod -R g+rw /home/${IMAGE_USER}/bench/sites/; \
+      chmod -R g+rw /home/${IMAGE_USER}/bench/config; \
       chmod -R g+rw /opt/nginx/
+    alpine: |
+      set -x; \
+      bash /home/${IMAGE_USER}/docker-patches.sh; \
+      chown -R ${IMAGE_USER}:${IMAGE_GROUP} /home/${IMAGE_USER}/bench/sites/; \
+      chmod -R g+rw /home/${IMAGE_USER}/bench/sites/; \
+      chmod -R g+rw /home/${IMAGE_USER}/bench/config; \
+      mkdir -p /var/lib/nginx && chmod -R g+rw /var/lib/nginx/
 
   # --- Frappe cache cleanup ---
   cleanup_frappe:
@@ -127,14 +135,23 @@ recipes:
 
   # --- File permissions ---
   fix_nginx_permissions:
-    _default: |
+    debian: |
       chown -R ${IMAGE_USER}:${IMAGE_GROUP} /run/nginx.pid ; \
       mkdir -p /opt/nginx/client_body_temp /opt/nginx/proxy_temp; \
       chmod 775 /opt/nginx/client_body_temp /opt/nginx/proxy_temp; \
-      chmod 775 /home/{{ image_user }}/bench/logs; \
-      chmod -R 664 /home/{{ image_user }}/bench/logs/*; \
-      find /home/{{ image_user }}/bench/sites_assets/ -type d -print0 | xargs -0 -r chmod 775 ; \
-      find /home/{{ image_user }}/bench/sites_assets/ -type f -print0 | xargs -0 -r chmod 644
+      chmod 775 /home/${IMAGE_USER}/bench/logs; \
+      chmod -R 664 /home/${IMAGE_USER}/bench/logs/*; \
+      find /home/${IMAGE_USER}/bench/sites_assets/ -type d -print0 | xargs -0 -r chmod 775 ; \
+      find /home/${IMAGE_USER}/bench/sites_assets/ -type f -print0 | xargs -0 -r chmod 644
+    alpine: |
+      mkdir -p /run/nginx && chown -R ${IMAGE_USER}:${IMAGE_GROUP} /run/nginx; \
+      mkdir -p /var/lib/nginx/client_body /var/lib/nginx/proxy; \
+      chown -R ${IMAGE_USER}:${IMAGE_GROUP} /var/lib/nginx; \
+      chmod 775 /var/lib/nginx/client_body /var/lib/nginx/proxy; \
+      chmod 775 /home/${IMAGE_USER}/bench/logs; \
+      chmod -R 664 /home/${IMAGE_USER}/bench/logs/* 2>/dev/null || true; \
+      find /home/${IMAGE_USER}/bench/sites_assets/ -type d -print0 | xargs -0 -r chmod 775 ; \
+      find /home/${IMAGE_USER}/bench/sites_assets/ -type f -print0 | xargs -0 -r chmod 644
 
   # --- Build verification ---
   verify_build:
