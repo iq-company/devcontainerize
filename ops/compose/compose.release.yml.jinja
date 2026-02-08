@@ -2,7 +2,6 @@
 # .env contains shared defaults, STAGE_ENV_FILE (set by CLI) contains stage-specific overrides
 
 x-backend-defaults: &backend_defaults
-  <<: *ddl_override
   image: ${IQ_IMAGE:-{{ image_prefix }}-release}:${IQ_IMAGE_TAG:-latest}
   platform: linux/amd64
   volumes:
