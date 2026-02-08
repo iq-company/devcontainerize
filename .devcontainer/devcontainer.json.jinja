@@ -28,6 +28,17 @@
 		"./compose.dev.override.yml"
 	],
 	"service": "app",
+	"forwardPorts": [8000, 9000],
+	"portsAttributes": {
+		"8000": {
+			"label": "Web Application",
+			"onAutoForward": "openBrowser"
+		},
+		"9000": {
+			"label": "SocketIO",
+			"onAutoForward": "silent"
+		}
+	},
 	"workspaceFolder": "/home/{{ image_user }}/bench",
 	"initializeCommand": "bash -c \"${localWorkspaceFolder}/ops/scripts/devcontainer/init_env_files {{ default_dbms }}\"",
 	"postStartCommand": "bash -c \"python /home/{{ image_user }}/bench/bin-dev/install_iq_keybindings.py && wait-for-it localhost:8000 && /home/{{ image_user }}/bench/bin-dev/info_bench_start.sh\"",

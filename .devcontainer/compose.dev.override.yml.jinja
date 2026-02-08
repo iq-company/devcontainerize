@@ -45,13 +45,11 @@ services:
       - -c
     command:
       - |
+        /home/{{ image_user }}/bench/bin-dev/kill_running_processes.sh 2>/dev/null || true
         bench start -p .devcontainer/honcho/Procfile &
         exec sleep infinity
     environment:
       FRAPPE_SITE_NAME_HEADER: ${IQ_SITE_NAME_HEADER:-$$host}
-    ports:
-      - "${NGINX_PORT}:8000"
-      - "9000:9000"
     depends_on:
       init:
         condition: service_completed_successfully

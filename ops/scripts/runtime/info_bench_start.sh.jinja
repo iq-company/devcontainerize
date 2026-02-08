@@ -18,13 +18,10 @@ fi
 
 echo -e '\n'
 
-# VSCode Dev Containers forwards internal port 8000 automatically
-echo -e "{{ project_name }} is now reachable on:
-	http://localhost:8000"
+# VSCode Dev Containers forwards container port 8000 via forwardPorts
+echo -e "{{ project_name }} is now reachable on:"
+echo -e "\thttp://localhost:8000/app"
 echo -e "\t(initial User: Administrator  PW: ${IQ_ADMIN_PW:-admin})"
-if [ -n "${NGINX_PORT}" ] && [ "${NGINX_PORT}" != "8000" ]; then
-	echo -e "\t(external port for other editors: ${NGINX_PORT})"
-fi
 
 echo -e "\nAdditional services:"
 echo -e "\t- Documentation: http://localhost:8000/docs"
