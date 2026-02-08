@@ -9,10 +9,6 @@ x-backend-defaults: &backend_defaults
   platform: linux/amd64
   # Note: Add "profiles: [...]" here if this service should only start
   # when specific COMPOSE_PROFILES are set in .env
-  environment:
-    # DDL mode: use super-user credentials (empty = use DB_SUPER_USER from .env)
-    DB_USER: ""
-    DB_PASSWORD: ""
   volumes:
     - sites:/home/{{ image_user }}/bench/sites
     - apps:/home/{{ image_user }}/bench/apps
@@ -45,7 +41,7 @@ services:
       - |
         exec sleep infinity
     environment:
-      FRAPPE_SITE_NAME_HEADER: ${IQ_SITE_NAME_HEADER:-$$host}
+      FRAPPE_SITE_NAME_HEADER: "${IQ_SITE_NAME_HEADER:-$$host}"
     depends_on:
       init:
         condition: service_completed_successfully

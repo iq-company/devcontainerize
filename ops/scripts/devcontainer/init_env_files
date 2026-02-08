@@ -180,6 +180,37 @@ else
 	# --- Create from template using interpolation function ---
 	interpolate_file "$STAGE_TEMPLATE" "$STAGE_ENV_FILE"
 
+	# --- DDL mode configuration ---
+	# In DDL mode, we use DB_SUPER_USER for all operations (full privileges)
+	# This requires: DB_NAME = DB_SUPER_USER and DB_USER/DB_PASSWORD empty
+	#
+	# Default: DDL enabled for dev/test/test_* stages
+	# Override with ENABLE_DDL=1 (force on) or ENABLE_DDL=0 (force off)
+	#
+	# Example: ENABLE_DDL=1 ./init_env_files staging  # Enable DDL for staging
+	# Example: ENABLE_DDL=0 ./init_env_files dev      # Disable DDL for dev
+
+	# Determine if DDL should be enabled
+	DDL_DEFAULT_STAGES="dev|test|test_*"
+	if [[ -n "${ENABLE_DDL:-}" ]]; then
+		# Explicit override
+		ENABLE_DDL_MODE="$ENABLE_DDL"
+	elif [[ "$STAGE_NAME" == "dev" || "$STAGE_NAME" == "test" || "$STAGE_NAME" == test_* ]]; then
+		# Default for dev/test stages
+		ENABLE_DDL_MODE="1"
+	else
+		ENABLE_DDL_MODE="0"
+	fi
+
+	if [[ "$ENABLE_DDL_MODE" == "1" ]]; then
+		sed -i 's/^DB_USER=.*/DB_USER=/' "$STAGE_ENV_FILE"
+		sed -i 's/^DB_PASSWORD=.*/DB_PASSWORD=/' "$STAGE_ENV_FILE"
+		sed -i "s/^DB_NAME=.*/DB_NAME=$DB_SUPER_USER_VAL/" "$STAGE_ENV_FILE"
+		echo "  → DDL mode enabled: DB_NAME=$DB_SUPER_USER_VAL, DB_USER/DB_PASSWORD cleared"
+	else
+		echo "  → DDL mode disabled: Using configured DB_USER"
+	fi
+
 	# --- Append DBMS-specific addon if exists ---
 	DBMS_ADDON="$TEMPLATES_DIR/env.$DBMS.addon.template"
 	if [ -f "$DBMS_ADDON" ]; then

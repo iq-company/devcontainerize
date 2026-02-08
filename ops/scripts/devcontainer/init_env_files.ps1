@@ -179,6 +179,37 @@ if (Test-Path $stageEnvFile) {
     # --- Create from template using interpolation function ---
     Invoke-InterpolateFile -Source $stageTemplate -Target $stageEnvFile
 
+    # --- DDL mode configuration ---
+    # In DDL mode, we use DB_SUPER_USER for all operations (full privileges)
+    # This requires: DB_NAME = DB_SUPER_USER and DB_USER/DB_PASSWORD empty
+    #
+    # Default: DDL enabled for dev/test/test_* stages
+    # Override with ENABLE_DDL=1 (force on) or ENABLE_DDL=0 (force off)
+    #
+    # Example: $env:ENABLE_DDL=1; .\init_env_files.ps1 staging  # Enable DDL for staging
+    # Example: $env:ENABLE_DDL=0; .\init_env_files.ps1 dev      # Disable DDL for dev
+
+    # Determine if DDL should be enabled
+    $enableDdlMode = "0"
+    if ($env:ENABLE_DDL) {
+        # Explicit override
+        $enableDdlMode = $env:ENABLE_DDL
+    } elseif ($script:stageName -eq "dev" -or $script:stageName -eq "test" -or $script:stageName -like "test_*") {
+        # Default for dev/test stages
+        $enableDdlMode = "1"
+    }
+
+    if ($enableDdlMode -eq "1") {
+        $content = Get-Content $stageEnvFile -Raw
+        $content = $content -replace '(?m)^DB_USER=.*$', 'DB_USER='
+        $content = $content -replace '(?m)^DB_PASSWORD=.*$', 'DB_PASSWORD='
+        $content = $content -replace '(?m)^DB_NAME=.*$', "DB_NAME=$script:dbSuperUserVal"
+        $content | Set-Content $stageEnvFile
+        Write-Host "  -> DDL mode enabled: DB_NAME=$script:dbSuperUserVal, DB_USER/DB_PASSWORD cleared"
+    } else {
+        Write-Host "  -> DDL mode disabled: Using configured DB_USER"
+    }
+
     # --- Append DBMS-specific addon if exists ---
     $dbmsAddon = Join-Path $templatesDir "env.$script:dbms.addon.template"
     if (Test-Path $dbmsAddon) {
