@@ -1,0 +1,39 @@
+# =============================================================================
+# Docker Build Context Exclusions
+# =============================================================================
+# These files/directories are excluded from the Docker build context
+# to prevent them from appearing in any image layer.
+
+# Environment files (may contain secrets)
+ops/env/.env*
+.devcontainer/.env*
+
+# Git
+.git
+.gitignore
+
+# IDE/Editor
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# Python cache
+__pycache__
+*.py[cod]
+*.pyo
+.pytest_cache
+.mypy_cache
+.ruff_cache
+
+# Node
+node_modules
+
+# Test files
+tests/
+test_*.py
+
+# Build artifacts that shouldn't be in image
+*.log
+*.tmp

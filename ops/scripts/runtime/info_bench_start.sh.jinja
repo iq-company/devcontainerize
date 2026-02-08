@@ -3,7 +3,7 @@
 echo -e '\n\n\n\n\n\n\n'
 
 # Check if keybindings are installed
-if python /home/{{ image_user }}/bench/bin-dev/check_iq_keybindings.py >/dev/null 2>&1; then
+if python check_iq_keybindings.py >/dev/null 2>&1; then
 	# Keybindings are installed
 	echo 'The following keyboard shortcuts are available:'
 	echo -e '\tF8 - Starts all services, if you stopped some of them in favor of debugging (or if something crashed)'
@@ -13,7 +13,7 @@ if python /home/{{ image_user }}/bench/bin-dev/check_iq_keybindings.py >/dev/nul
 else
 	# Keybindings are not installed
 	echo 'Keyboard shortcuts are not installed yet.'
-	echo -e '\t	To install them, run: python /home/{{ image_user }}/bench/bin-dev/install_iq_keybindings.py'
+	echo -e '\t	To install them, run: python install_iq_keybindings.py'
 fi
 
 echo -e '\n'

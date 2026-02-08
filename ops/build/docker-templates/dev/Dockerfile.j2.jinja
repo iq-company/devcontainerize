@@ -31,7 +31,7 @@ ARG GITHUB_USER=x-oauth-basic
 ARG GITHUB_TOKEN
 ARG PRODUCTION_BUILD=false
 
-ARG FRAPPE_REF={{ '{{' }} defaults.frappe_ref | default(defaults.frappe_branch, true) | default('version-15', true) {{ '}}' }}
+ARG FRAPPE_REF={{ defaults.frappe_ref | default(defaults.frappe_branch, true) | default('version-15', true) }}
 ARG FRAPPE_PATH=https://github.com/frappe/frappe
 
 # --- Copy compiled binaries from builder (variant-specific) ---
@@ -39,11 +39,6 @@ ARG FRAPPE_PATH=https://github.com/frappe/frappe
 {{ recipe_raw("copy_from_builder_dbms") }}
 {{ recipe_raw("copy_from_builder_nginx") }}
 {% endif %}
-
-# Add both NVM/Node path and bench venv to PATH
-# Note: Combined in one ENV so NVM_DIR is available for PATH expansion
-ENV NVM_DIR=/home/${IMAGE_USER}/.nvm \
-    PATH="/home/${IMAGE_USER}/.nvm/versions/node/v{{ '{{' }} defaults.node_version {{ '}}' }}/bin:/home/${IMAGE_USER}/bench/env/bin:${PATH}"
 
 USER root
 

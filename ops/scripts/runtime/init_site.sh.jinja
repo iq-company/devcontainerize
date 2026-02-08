@@ -34,7 +34,7 @@ export FRAPPE_STREAM_LOGGING=true
 export NEWLY_LINKED_APPS
 
 # Ensure all apps have .pth files in site-packages
-/home/${IMAGE_USER}/bench/bin-dev/check_and_setup_pth_files.sh
+check_and_setup_pth_files.sh
 
 # Check if node_modules needs to be initialized for locally mounted apps
 while IFS= read -r app_dir; do

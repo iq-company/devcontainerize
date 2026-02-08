@@ -23,7 +23,9 @@ ARG WKHTMLTOPDF_VERSION=0.12.6.1-3
 ARG WKHTMLTOPDF_DISTRO={{ defaults.debian_base }}
 ARG NODE_VERSION={{ defaults.node_version }}
 ENV NVM_DIR=/home/${IMAGE_USER}/.nvm
-ENV PATH=${NVM_DIR}/versions/node/v${NODE_VERSION}/bin/:${PATH}
+
+# Runtime scripts path (populated in dev/release), NVM, and venv
+ENV PATH="/home/${IMAGE_USER}/bench/apps/{{ defaults.app_name }}/ops/scripts/runtime:${NVM_DIR}/versions/node/v${NODE_VERSION}/bin:/home/${IMAGE_USER}/bench/env/bin:${PATH}"
 
 ARG IQ_SITE_NAME="{{ defaults.site_name | default(defaults.app_name + '.local') }}"
 ENV IQ_SITE_NAME=${IQ_SITE_NAME}

@@ -14,8 +14,6 @@ x-backend-defaults: &backend_defaults
     DB_USER: ""
     DB_PASSWORD: ""
   volumes:
-    # Path relative to compose project directory (ops/compose/)
-    - ../scripts/runtime:/home/{{ image_user }}/bench/bin-dev
     - sites:/home/{{ image_user }}/bench/sites
     - apps:/home/{{ image_user }}/bench/apps
     - type: bind
@@ -29,7 +27,7 @@ x-backend-defaults: &backend_defaults
 services:
   init:
     <<: *backend_defaults
-    command: bash -c "DEV_CONTAINER=1 /home/{{ image_user }}/bench/bin-dev/init_site.sh"
+    command: bash -c "DEV_CONTAINER=1 init_site.sh"
     depends_on:
       db:
         condition: service_started
@@ -45,8 +43,6 @@ services:
       - -c
     command:
       - |
-        /home/{{ image_user }}/bench/bin-dev/kill_running_processes.sh 2>/dev/null || true
-        bench start -p .devcontainer/honcho/Procfile &
         exec sleep infinity
     environment:
       FRAPPE_SITE_NAME_HEADER: ${IQ_SITE_NAME_HEADER:-$$host}

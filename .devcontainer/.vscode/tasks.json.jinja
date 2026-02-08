@@ -108,7 +108,7 @@
     {
       "label": "Apps: Create a new App",
       "type": "shell",
-      "command": "source ${workspaceFolder}/apps/{{ app_name }}/ops/scripts/common/load_env.sh && ${workspaceFolder}/bin-dev/manage_app.py",
+      "command": "source ${workspaceFolder}/apps/{{ app_name }}/ops/scripts/common/load_env.sh && manage_app.py",
       "options": {
         "cwd": "${workspaceFolder}"
       },
@@ -121,7 +121,7 @@
     {
       "label": "Apps: Add existing App from a Repository",
       "type": "shell",
-      "command": "source ${workspaceFolder}/apps/{{ app_name }}/ops/scripts/common/load_env.sh && ${workspaceFolder}/bin-dev/manage_app.py",
+      "command": "source ${workspaceFolder}/apps/{{ app_name }}/ops/scripts/common/load_env.sh && manage_app.py",
       "args": [
         "link",
         "${input:appUrl}"
@@ -131,7 +131,7 @@
     {
       "label": "Kill Running IQ Processes",
       "type": "shell",
-      "command": "${workspaceFolder}/bin-dev/kill_running_processes.sh",
+      "command": "kill_running_processes.sh",
       "problemMatcher": [],
       "presentation": {
         "echo": true,
@@ -162,7 +162,7 @@
     {
       "label": "Show Info",
       "type": "shell",
-      "command": "source ${workspaceFolder}/apps/{{ app_name }}/ops/scripts/common/load_env.sh && wait-for-it localhost:8000 && ${workspaceFolder}/bin-dev/info_bench_start.sh",
+      "command": "source ${workspaceFolder}/apps/{{ app_name }}/ops/scripts/common/load_env.sh && wait-for-it localhost:8000 && info_bench_start.sh",
       "problemMatcher": [],
       "presentation": {
         "reveal": "always",
