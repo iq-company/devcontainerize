@@ -51,7 +51,7 @@
     {
       "label": "Start Procfile_skip_web",
       "type": "shell",
-      "command": "source ${workspaceFolder}/env/bin/activate && bench start -p Procfile_skip_web",
+      "command": "source ${workspaceFolder}/env/bin/activate && bench start -p .devcontainer/honcho/Procfile_skip_web",
       "isBackground": true,
       "problemMatcher": {
         "pattern": [
@@ -81,7 +81,7 @@
     {
       "label": "Start Procfile_skip_worker",
       "type": "shell",
-      "command": "source ${workspaceFolder}/env/bin/activate && bench start -p Procfile_skip_worker",
+      "command": "source ${workspaceFolder}/env/bin/activate && bench start -p .devcontainer/honcho/Procfile_skip_worker",
       "isBackground": true,
       "problemMatcher": {
         "pattern": [
@@ -173,7 +173,7 @@
     {
       "label": "Start Bench",
       "type": "shell",
-      "command": "source ${workspaceFolder}/env/bin/activate && bench start",
+      "command": "source ${workspaceFolder}/env/bin/activate && bench start -p .devcontainer/honcho/Procfile",
       "isBackground": true,
       "problemMatcher": {
         "pattern": [

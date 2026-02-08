@@ -36,9 +36,6 @@
 		"source=${localEnv:HOME}${localEnv:USERPROFILE}/.ssh,target=/home/{{ image_user }}/.ssh,type=bind,consistency=delegated",
 		"source=${localWorkspaceFolder}/.devcontainer,target=/home/{{ image_user }}/bench/.devcontainer,type=bind,consistency=delegated",
 		"source=${localWorkspaceFolder}/.devcontainer/.vscode,target=/home/{{ image_user }}/bench/.vscode,type=bind,consistency=delegated",
-		"source=${localWorkspaceFolder}/.devcontainer/honcho/Procfile,target=/home/{{ image_user }}/bench/Procfile,type=bind,consistency=delegated",
-		"source=${localWorkspaceFolder}/.devcontainer/honcho/Procfile_skip_web,target=/home/{{ image_user }}/bench/Procfile_skip_web,type=bind,consistency=delegated",
-		"source=${localWorkspaceFolder}/.devcontainer/honcho/Procfile_skip_worker,target=/home/{{ image_user }}/bench/Procfile_skip_worker,type=bind,consistency=delegated",
 		"source=${localWorkspaceFolder},target=/home/{{ image_user }}/bench/apps/{{ app_name }},type=bind,consistency=delegated"
 	]
 }

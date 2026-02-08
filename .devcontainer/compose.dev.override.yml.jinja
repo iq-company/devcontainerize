@@ -45,7 +45,7 @@ services:
       - -c
     command:
       - |
-        bench start &
+        bench start -p .devcontainer/honcho/Procfile &
         exec sleep infinity
     environment:
       FRAPPE_SITE_NAME_HEADER: ${IQ_SITE_NAME_HEADER:-$$host}

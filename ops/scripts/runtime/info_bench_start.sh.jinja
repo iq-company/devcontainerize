@@ -18,9 +18,22 @@ fi
 
 echo -e '\n'
 
-echo -e "{{ project_name }} is now reachable on your host system on:
-	http://localhost:$NGINX_PORT"
-echo -e "\t(initial Administrator PW: $IQ_ADMIN_PW)\n"
-echo -e 'Find further documentation at http://localhost:8000/docs, or Database manager at http://localhost:8015'
+# VSCode Dev Containers forwards internal port 8000 automatically
+echo -e "{{ project_name }} is now reachable on:
+	http://localhost:8000"
+echo -e "\t(initial User: Administrator  PW: ${IQ_ADMIN_PW:-admin})"
+if [ -n "${NGINX_PORT}" ] && [ "${NGINX_PORT}" != "8000" ]; then
+	echo -e "\t(external port for other editors: ${NGINX_PORT})"
+fi
+
+echo -e "\nAdditional services:"
+echo -e "\t- Documentation: http://localhost:8000/docs"
+
+# Check if webdb profile is active
+if [[ "${COMPOSE_PROFILES}" == *"webdb"* ]]; then
+	echo -e "\t- Database Manager (webdb): http://localhost:${WEBDB_PORT:-22071}"
+else
+	echo -e "\t- Database Manager: not started (add 'webdb' to COMPOSE_PROFILES in .env.dev)"
+fi
 
 echo -e '\n'
