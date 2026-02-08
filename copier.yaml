@@ -86,6 +86,8 @@ _skip_if_exists:
   - "{{ app_name }}/ops_hooks.py"
   - "ops/build/VERSION"
   - "ops/build/stages.yml"
+  - "ops/build/resources/container-reduce.sh"
+  - "ops/build/resources/frappe-patches.sh"
   - "ops/env-templates/env.template"
   - "ops/build/docker-templates/recipes/99-custom.yml"  # User's custom recipes
   - "pyproject.toml"
@@ -128,5 +130,6 @@ _exclude:
   - tests/
   - README.md
   - LICENSE
+  - AGENT.md
   - copier.yaml
   - copier_features.yml
