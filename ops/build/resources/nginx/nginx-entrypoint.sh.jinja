@@ -44,7 +44,7 @@ fi
 # port/listener settings with opt TLS Settings #################
 export LISTENER_PLACEHOLDER="listen 8080;"
 
-TLS_PATH="/opt/nginx/conf/tls"
+TLS_PATH="/etc/nginx/tls"
 
 if [ -f "$TLS_PATH/tls.key" ]; then
   echo "Activating TLS"
@@ -75,11 +75,11 @@ envsubst '${BACKEND}
   ${PROXY_READ_TIMEOUT}
   ${LISTENER_PLACEHOLDER}
   ${CLIENT_MAX_BODY_SIZE}' \
-    </templates/nginx/{{ project_slug }}.conf.template >/opt/nginx/conf/conf.d/{{ project_slug }}.conf
+    </templates/nginx/iq.conf.template >/etc/nginx/http.d/iq.conf
 
 
 if [ -f "$TLS_PATH/tls.key" ]; then
-  sed -i 's|http://backend-server|https://backend-server|g' /opt/nginx/conf/conf.d/{{ project_slug }}.conf
+  sed -i 's|http://backend-server|https://backend-server|g' /etc/nginx/http.d/iq.conf
 fi
 
-/opt/nginx/sbin/nginx -g 'daemon off;'
+exec nginx -g 'daemon off;'

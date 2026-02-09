@@ -19,12 +19,13 @@ recipes:
       apt-get update && apt-get install --no-install-recommends -y \
           wget gettext-base file \
           libgl1-mesa-glx libglib2.0-0 \
-          wait-for-it jq
+          wait-for-it jq nginx
     alpine: |
       apk add --no-cache \
           wget gettext file \
           mesa-gl glib \
-          bash jq coreutils curl
+          bash jq coreutils curl nginx; \
+      mkdir -p /run/nginx /var/log/nginx /etc/nginx/http.d
 
   # --- Frappe builder packages (DBMS-specific dev libraries) ---
   install_builder_packages:
@@ -98,14 +99,15 @@ recipes:
       chown -R ${IMAGE_USER}:${IMAGE_GROUP} /home/${IMAGE_USER}/bench/sites/; \
       chmod -R g+rw /home/${IMAGE_USER}/bench/sites/; \
       chmod -R g+rw /home/${IMAGE_USER}/bench/config; \
-      chmod -R g+rw /opt/nginx/
+      chmod -R g+rw /etc/nginx/
     alpine: |
       set -x; \
       bash /home/${IMAGE_USER}/docker-patches.sh; \
       chown -R ${IMAGE_USER}:${IMAGE_GROUP} /home/${IMAGE_USER}/bench/sites/; \
       chmod -R g+rw /home/${IMAGE_USER}/bench/sites/; \
       chmod -R g+rw /home/${IMAGE_USER}/bench/config; \
-      mkdir -p /var/lib/nginx && chmod -R g+rw /var/lib/nginx/
+      chown -R ${IMAGE_USER}:${IMAGE_GROUP} /etc/nginx /run/nginx /var/log/nginx /var/lib/nginx; \
+      chmod -R g+rw /etc/nginx /var/lib/nginx
 
   # --- Frappe cache cleanup ---
   cleanup_frappe:
