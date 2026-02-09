@@ -493,12 +493,7 @@ COMPOSE_PROFILES=ocr,monitoring
 
 ```bash
 # Create env files for a stage
-bench ops stage env dev        # Creates .env + .env.dev
 bench ops stage env staging    # Creates .env + .env.staging
-
-# Or directly via script
-./ops/scripts/devcontainer/init_env_files postgres           # Default: .env.dev
-ENV_FILE_SUFFIX=.staging ./ops/scripts/devcontainer/init_env_files postgres
 ```
 
 ### Loading Environment in Scripts
