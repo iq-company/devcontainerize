@@ -11,6 +11,7 @@ A `copier`-based template for creating devcontainerized Frappe app projects with
 - [Configuration Options](#configuration-options)
 - [CLI Commands](#cli-commands)
 - [Devcontainer](#devcontainer)
+- [Compose Architecture](#compose-architecture)
 - [Environment Files](#environment-files)
 - [Optional Services (Compose Profiles)](#optional-services-compose-profiles)
 - [Keeping Updated](#keeping-updated)
@@ -439,6 +440,95 @@ baker rm --targets dev          # Remove local images
 | `Procfile` | Full stack (web, worker, watch, schedule) |
 | `Procfile_skip_web` | Without web server (for debugging) |
 | `Procfile_skip_worker` | Without background workers |
+
+---
+
+## Compose Architecture
+
+### Entry Point: compose.base.yml
+
+All compose configurations use `compose.base.yml` as the universal entry point:
+
+```yaml
+include:
+  - compose.${DBMS}.yml           # DB service (profile: db)
+  - compose.init.${DBMS}.yml      # Init service (profile: stack)
+  - compose.stack.yml             # Production services (profile: stack)
+  - compose.with-*.yml            # Optional services
+```
+
+### Profile-Based Service Control
+
+Services are controlled via **profiles**, not by selecting different compose files:
+
+| Profile | Services | Description |
+|---------|----------|-------------|
+| `db` | Database (postgres/mariadb) | When DB runs in container |
+| `redis` | Redis cache and queue | When Redis runs in container |
+| `stack` | init, backend, frontend, workers, scheduler | Full production stack |
+| `webdb` | Database admin UI | Optional debugging tool |
+
+### DevContainer vs Release Stages
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ DevContainer                    │ Release Stages (local, staging, prod)    │
+├─────────────────────────────────┼───────────────────────────────────────────┤
+│ profiles: [db, redis]           │ profiles: [db, redis, stack]              │
+│ compose.base.yml                │ compose.base.yml                          │
+│   + compose.dev.override.yml    │   (stack profile activates init + stack)  │
+│                                 │                                           │
+│ • init from override (bind      │ • init from compose.init.{dbms}.yml       │
+│   mounts for live editing)      │   (apps baked into image)                 │
+│ • app service: sleep infinity   │ • backend, frontend, workers, scheduler   │
+│ • Procfile handles services     │   all from compose.stack.yml              │
+└─────────────────────────────────┴───────────────────────────────────────────┘
+```
+
+**Why DevContainer needs a separate init:**
+- Apps mounted as **bind mounts** (for live code editing)
+- `VSCODE_SETTINGS_PATH` mount for keybindings
+- `DEV_CONTAINER=1` environment variable
+
+**Why Release stages use compose.init.{dbms}.yml:**
+- Apps **baked into the image** (no bind mounts)
+- Same init script, different volumes
+
+### Stage Profile Configuration
+
+Stages define which profiles to activate:
+
+```yaml
+# ops/build/stages.yml
+stages:
+  dev:
+    target: dev
+    profiles: [db, redis]         # No stack - DevContainer uses Procfile
+
+  local:
+    target: release
+    profiles: [db, redis, stack]  # Full stack in containers
+
+  staging:
+    target: release
+    profiles: [stack]             # Only stack, external DB/Redis
+```
+
+### Compose File Overview
+
+```
+ops/compose/
+├── compose.base.yml              # Entry point (includes all below)
+├── compose.postgres.yml          # PostgreSQL service (profile: db)
+├── compose.mariadb.yml           # MariaDB service (profile: db)
+├── compose.init.postgres.yml     # Init for PostgreSQL (profile: stack)
+├── compose.init.mariadb.yml      # Init for MariaDB (profile: stack)
+├── compose.stack.yml             # Production services (profile: stack)
+└── compose.with-*.yml            # Optional services (custom profiles)
+
+.devcontainer/
+└── compose.dev.override.yml      # DevContainer-specific (init + app)
+```
 
 ---
 

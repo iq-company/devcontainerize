@@ -1048,26 +1048,24 @@ def validate_stage_config(config: dict, stage_name: str) -> list[str]:
 
 
 def get_compose_files(stage: dict) -> list[str]:
-    """Get list of compose files for a stage."""
+    """Get compose file(s) for a stage.
+
+    Uses stage's `compose_file` property if defined, otherwise defaults to
+    compose.base.yml. All further includes are defined statically within
+    the compose file itself via the 'include:' directive.
+
+    Example stage config:
+        local:
+          compose_file: compose.stack-base.yml  # Custom entry point
+    """
     app_root = get_app_root()
     compose_dir = app_root / "ops" / "compose"
 
-    files = [compose_dir / "compose.base.yml"]
+    # Get compose file from stage config, default to compose.base.yml
+    compose_file = stage.get("compose_file", "compose.base.yml")
+    entry_file = compose_dir / compose_file
 
-    # Add profile-specific compose files
-    profiles = stage.get("profiles", [])
-    if "db" in profiles:
-        dbms = os.environ.get("DBMS", "postgres")
-        db_file = compose_dir / f"compose.{dbms}.yml"
-        if db_file.exists():
-            files.append(db_file)
-
-    # Always include release compose
-    release_file = compose_dir / "compose.release.yml"
-    if release_file.exists():
-        files.append(release_file)
-
-    return [str(f) for f in files if f.exists()]
+    return [str(entry_file)] if entry_file.exists() else []
 
 
 def get_stages_that_extend(config: dict, stage_name: str) -> list[str]:
@@ -1224,12 +1222,58 @@ def stage_show(stage_name: str):
             click.echo(issue)
 
 
+def _check_docker_available() -> bool:
+    """Check if Docker and Docker Compose are available."""
+    try:
+        result = subprocess.run(
+            ["docker", "--version"],
+            capture_output=True,
+            text=True
+        )
+        if result.returncode != 0:
+            return False
+
+        result = subprocess.run(
+            ["docker", "compose", "version"],
+            capture_output=True,
+            text=True
+        )
+        return result.returncode == 0
+    except FileNotFoundError:
+        return False
+
+
+def parse_image_reference(image_ref: str) -> tuple[str, str]:
+    """Parse an image reference into name and tag.
+
+    Examples:
+        ghcr.io/org/repo/app:v1.0.0 -> (ghcr.io/org/repo/app, v1.0.0)
+        myapp:latest -> (myapp, latest)
+        myapp -> (myapp, latest)
+    """
+    if ":" in image_ref:
+        # Split on last colon (handles registry URLs with ports)
+        parts = image_ref.rsplit(":", 1)
+        return parts[0], parts[1]
+    return image_ref, "latest"
+
+
 @stage.command("run")
 @click.argument("stage_name")
 @click.option("-d", "--detach", is_flag=True, default=True, help="Run in background (default)")
 @click.option("-f", "--foreground", is_flag=True, help="Run in foreground")
 def stage_run(stage_name: str, detach: bool, foreground: bool):
     """Start environment for a stage."""
+    # Check Docker availability
+    if not _check_docker_available():
+        click.echo("❌ Docker or Docker Compose not available.", err=True)
+        click.echo("")
+        click.echo("   This command requires Docker and Docker Compose to be installed.")
+        click.echo("   If you're inside a DevContainer, use VS Code's terminal on the host instead.")
+        click.echo("")
+        click.echo("   Install Docker: https://docs.docker.com/get-docker/")
+        sys.exit(1)
+
     config = load_stages_config()
     stage = get_stage_config(config, stage_name)
     app_root = get_app_root()
@@ -1285,9 +1329,15 @@ def stage_run(stage_name: str, detach: bool, foreground: bool):
     click.echo(f"   Profiles: {', '.join(stage.get('profiles', [])) or '(none)'}")
     click.echo(f"\n   Running: {' '.join(cmd)}\n")
 
-    # Set STAGE_ENV_FILE for compose files that use it for env_file: directive
+    # Set environment for compose
     env = os.environ.copy()
     env["STAGE_ENV_FILE"] = env_file_name
+
+    # If stage has explicit image, override IQ_IMAGE/IQ_IMAGE_TAG
+    if has_registry:
+        iq_image, iq_tag = parse_image_reference(stage["image"])
+        env["IQ_IMAGE"] = iq_image
+        env["IQ_IMAGE_TAG"] = iq_tag
 
     result = subprocess.run(cmd, cwd=compose_dir, env=env)
     sys.exit(result.returncode)

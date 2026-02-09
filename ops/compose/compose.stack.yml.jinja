@@ -1,9 +1,14 @@
-# This compose file extends the base compose.yml for the "release" scenario.
+# Production stack services (backend, frontend, workers, scheduler)
+# Profile: stack - only starts when stack profile is active
+# In DevContainer, the Procfile handles these services instead
+#
 # .env contains shared defaults, STAGE_ENV_FILE (set by CLI) contains stage-specific overrides
 
 x-backend-defaults: &backend_defaults
   image: ${IQ_IMAGE:-{{ image_prefix }}-release}:${IQ_IMAGE_TAG:-latest}
   platform: linux/amd64
+  profiles:
+    - stack
   volumes:
     - sites:/home/{{ image_user }}/bench/sites
   env_file:

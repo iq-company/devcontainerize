@@ -1,10 +1,15 @@
-# Init service for PostgreSQL
+# Init service for PostgreSQL - creates site if not exists
+# Profile: stack - only starts when stack profile is active
+# In DevContainer, compose.dev.override.yml overrides this with dev-specific volumes
+#
 # .env contains shared defaults, STAGE_ENV_FILE (set by CLI) contains stage-specific overrides
 
 services:
   init:
-    image: ${CUSTOM_IMAGE:-{{ image_prefix }}-release}:${CUSTOM_TAG:-latest}
+    image: ${IQ_IMAGE:-{{ image_prefix }}-release}:${IQ_IMAGE_TAG:-latest}
     platform: linux/amd64
+    profiles:
+      - stack
     env_file:
       - ../env/.env
       - ../env/${STAGE_ENV_FILE:-.env.dev}

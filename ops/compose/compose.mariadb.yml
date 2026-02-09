@@ -1,6 +1,8 @@
 services:
   db:
     image: mariadb:10.6
+    profiles:
+      - db
     restart: on-failure
     platform: linux/amd64
     command:

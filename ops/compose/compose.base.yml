@@ -1,16 +1,25 @@
 include:
+  # DBMS-specific compose (postgres/mariadb/sqlite) - uses $DBMS from .env
+  - ./compose.${DBMS:-postgres}.yml
+  # Init service for site initialization (profile: stack)
+  - ./compose.init.${DBMS:-postgres}.yml
+  # Production stack services (profile: stack)
+  - ./compose.stack.yml
   # Add project-specific compose files here, e.g.:
   # - ./compose.with-optional-service.example.yml
-  - ./compose.${DBMS:-postgres}.yml
 
 services:
   redis-cache:
     image: docker.io/redis:alpine
     platform: linux/amd64
+    profiles:
+      - redis
 
   redis-queue:
     image: docker.io/redis:alpine
     platform: linux/amd64
+    profiles:
+      - redis
 
   # (optional) db admin tool, for db table investigation
   webdb:
