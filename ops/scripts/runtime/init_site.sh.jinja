@@ -12,23 +12,8 @@ APPS_DIR="/home/${IMAGE_USER}/bench/apps"
 
 echo "Using DBMS: $DBMS"
 
-if [ "$DBMS" == "postgres" ]; then
-    echo "Waiting for PostgreSQL to start..."
-    wait-for-it $DB_HOST:$DB_PORT
-    echo "POSTGRES $DB_HOST:$DB_PORT is ready"
-
-elif [ "$DBMS" == "mariadb" ]; then
-    echo "Waiting for MariaDB to start..."
-    wait-for-it $DB_HOST:$DB_PORT
-    echo "MARIADB $DB_HOST:$DB_PORT is ready"
-
-elif [ "$DBMS" == "sqlite" ]; then
-    echo "Using SQLite - no database server required"
-
-else
-    echo "Error: Unknown DBMS specified in .env: $DBMS" >&2
-    exit 1
-fi
+# Wait for all external services (DB, Redis)
+wait_for_services.sh
 
 export FRAPPE_STREAM_LOGGING=true
 export NEWLY_LINKED_APPS
@@ -175,6 +160,17 @@ EOF
 		echo "Error: Unknown DBMS specified in .env: $DBMS" >&2
 		exit 1
 	fi
+else
+	# Site already exists - run migrations
+	echo "Site $IQ_SITE_NAME already exists. Running migrations..."
+
+	if [ "$DBMS" == "postgres" ]; then
+		bench --site $IQ_SITE_NAME pg-migrate --db-root-username $DB_SUPER_USER --db-root-password $DB_SUPER_USER_PW
+	else
+		bench --site $IQ_SITE_NAME migrate
+	fi
+
+	echo "Migration completed."
 fi
 
 # if APP env is set, install the app if its not frappe or iq_core

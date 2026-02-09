@@ -31,6 +31,11 @@ ARG IMAGE_GROUP={{ defaults.image_group }}
 
 USER root
 
+# Ensure nginx directories and templates are accessible
+RUN chown -R ${IMAGE_USER}:${IMAGE_GROUP} /etc/nginx /var/log/nginx /run/nginx /templates 2>/dev/null || true; \
+    chmod -R g+rw /etc/nginx /var/log/nginx /run/nginx 2>/dev/null || true; \
+    chmod 644 /templates/nginx/*.template 2>/dev/null || true
+
 RUN find /home/${IMAGE_USER}/bench/sites_assets/ -type d -print0 | xargs -0 -r chmod 775 ; \
     find /home/${IMAGE_USER}/bench/sites_assets/ -type f -print0 | xargs -0 -r chmod 644
 

@@ -1,0 +1,21 @@
+# =============================================================================
+# Init service - waits for services only (no init/migrate)
+# =============================================================================
+# Used when INIT_MODE=wait (staging, prod stages with existing site)
+#
+# Behavior:
+#   1. Wait for DB and Redis to be available (via wait_for_services.sh)
+#   2. Exit successfully - stack services can start
+#
+# Use this for deployments where the site already exists and migrations
+# are handled separately (e.g., via CI/CD pipeline or manual process).
+
+services:
+  init:
+    image: ${IQ_IMAGE:-iq-release}:${IQ_IMAGE_TAG:-latest}
+    platform: linux/amd64
+    env_file:
+      - ../env/.env
+      - ../env/${STAGE_ENV_FILE:-.env.dev}
+    entrypoint: ["bash", "-c", "wait_for_services.sh"]
+    restart: "no"

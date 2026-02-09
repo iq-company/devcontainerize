@@ -24,8 +24,12 @@ recipes:
       apk add --no-cache \
           wget gettext file \
           mesa-gl glib \
-          bash jq coreutils curl nginx; \
-      mkdir -p /run/nginx /var/log/nginx /etc/nginx/http.d
+          bash jq coreutils curl \
+          nginx nginx-mod-http-lua lua-resty-core; \
+      mkdir -p /run/nginx /var/log/nginx /etc/nginx/http.d /templates/nginx; \
+      mkdir -p /opt/nginx/luajit/share/lua/5.1 /opt/nginx/luajit/lib/lua/5.1; \
+      ln -sf /usr/share/lua/5.1/* /opt/nginx/luajit/share/lua/5.1/ 2>/dev/null || true; \
+      ln -sf /usr/lib/lua/5.1/* /opt/nginx/luajit/lib/lua/5.1/ 2>/dev/null || true
 
   # --- Frappe builder packages (DBMS-specific dev libraries) ---
   install_builder_packages:

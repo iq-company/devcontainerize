@@ -1,4 +1,29 @@
-# SQLite requires no external database service
-# This file is intentionally minimal - SQLite uses local file storage
+# =============================================================================
+# SQLite "database service" - creates DB file if not exists
+# =============================================================================
+# This is a dummy service that ensures the SQLite file exists.
+# It runs once, creates the file if needed, then exits.
+# This allows depends_on: db to work consistently across all DBMS types.
 
-services: {}
+services:
+  db:
+    image: busybox
+    platform: linux/amd64
+    profiles:
+      - db
+    volumes:
+      - sqlite-data:/data
+    command: |
+      sh -c "
+        DB_PATH=/data/${COMPOSE_PROJECT_NAME:-sqlite-data}.db
+        if [ ! -f \"$$DB_PATH\" ]; then
+          touch \"$$DB_PATH\"
+          echo \"Created SQLite database: $$DB_PATH\"
+        else
+          echo \"SQLite database exists: $$DB_PATH\"
+        fi
+      "
+    restart: "no"
+
+volumes:
+  sqlite-data:

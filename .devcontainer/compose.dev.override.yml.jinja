@@ -1,36 +1,61 @@
-# This compose file extends the base compose.yml for the development environment.
-# It mounts local source code and defines the main application service for debugging.
+# =============================================================================
+# DevContainer Compose Override
+# =============================================================================
+# This file OVERRIDES services from compose.base.yml for DevContainer use.
+# It is ONLY loaded when VSCode starts the DevContainer (via devcontainer.json).
 #
-# Note: This file is placed in .devcontainer/ for VSCode devcontainer support.
-# It reads .env (shared defaults) and .env.dev (stage-specific) from ops/env/.
+# Key differences from release stages:
+# - Extra volume mounts: apps (live editing), vscode-host (keybindings)
+# - DEV_CONTAINER=1 environment variable
+# - app service runs "sleep infinity" (Procfile handles actual services)
+#
+# When you run "bench ops stage run dev", this file is NOT loaded,
+# so the "normal" init from compose.init.migrate.yml is used (sites volume only).
+# =============================================================================
 
+# -----------------------------------------------------------------------------
+# YAML Anchor: backend_defaults
+# -----------------------------------------------------------------------------
+# This anchor defines shared settings for DevContainer services.
+# Services using "<<: *backend_defaults" INHERIT these volumes and env_file.
+#
+# The "init" service below uses this anchor, which means it gets:
+# - apps volume (for live code editing in DevContainer)
+# - vscode-host bind mount (for keybindings sync)
+# - env_file pointing to .env.dev
+#
+# This REPLACES the init service from compose.init.migrate.yml when this
+# override file is loaded. The release init (sites volume only) is not used
+# in DevContainer context - and that's intentional!
+# -----------------------------------------------------------------------------
 x-backend-defaults: &backend_defaults
   image: "${IQ_IMAGE}:${IQ_IMAGE_TAG}"
   platform: linux/amd64
-  # Note: Add "profiles: [...]" here if this service should only start
-  # when specific COMPOSE_PROFILES are set in .env
   volumes:
     - sites:/home/{{ image_user }}/bench/sites
-    - apps:/home/{{ image_user }}/bench/apps
+    - apps:/home/{{ image_user }}/bench/apps          # DevContainer: live code editing
     - type: bind
       source: "${VSCODE_SETTINGS_PATH}"
-      target: "/home/{{ image_user }}/.vscode-host"
+      target: "/home/{{ image_user }}/.vscode-host"   # DevContainer: keybindings sync
   env_file:
-    # Paths are relative to compose project directory (ops/compose/, set by first -f file)
     - ../env/.env
     - ../env/.env.dev
 
 services:
+  # ---------------------------------------------------------------------------
+  # init: Site initialization (OVERRIDES compose.init.migrate.yml)
+  # ---------------------------------------------------------------------------
+  # This init service REPLACES the one from compose.init.migrate.yml when
+  # compose.dev.override.yml is loaded. Key differences:
+  # - Uses backend_defaults anchor → gets apps + vscode-host volumes
+  # - Sets DEV_CONTAINER=1 → init_site.sh knows it's in DevContainer
+  #
+  # No depends_on here - init_site.sh uses wait-for-it to check DB/Redis
+  # availability (works for both container and external services).
+  # ---------------------------------------------------------------------------
   init:
     <<: *backend_defaults
     command: bash -c "DEV_CONTAINER=1 init_site.sh"
-    depends_on:
-      db:
-        condition: service_started
-      redis-cache:
-        condition: service_started
-      redis-queue:
-        condition: service_started
 
   app:
     <<: *backend_defaults

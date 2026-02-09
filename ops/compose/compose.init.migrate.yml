@@ -1,0 +1,24 @@
+# =============================================================================
+# Init service - waits for services, creates site or migrates
+# =============================================================================
+# Used when INIT_MODE=migrate (dev, local, test stages)
+#
+# Behavior:
+#   1. Wait for DB and Redis to be available (via wait-for-it)
+#   2. If site doesn't exist: create it
+#   3. If site exists: run migrations
+#
+# No depends_on here - init_site.sh uses wait-for-it to check DB/Redis
+# availability (works for both container and external services)
+
+services:
+  init:
+    image: ${IQ_IMAGE:-iq-release}:${IQ_IMAGE_TAG:-latest}
+    platform: linux/amd64
+    env_file:
+      - ../env/.env
+      - ../env/${STAGE_ENV_FILE:-.env.dev}
+    volumes:
+      - sites:/home/iqa/bench/sites
+    entrypoint: ["bash", "-c", "init_site.sh"]
+    restart: "no"

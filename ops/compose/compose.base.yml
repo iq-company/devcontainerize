@@ -1,8 +1,10 @@
 include:
   # DBMS-specific compose (postgres/mariadb/sqlite) - uses $DBMS from .env
   - ./compose.${DBMS:-postgres}.yml
-  # Init service for site initialization (profile: stack)
-  - ./compose.init.${DBMS:-postgres}.yml
+  # Init service - uses $INIT_MODE from .env:
+  #   - migrate: Wait for services → create site or migrate (dev, local, test)
+  #   - wait: Wait for services only, no init/migrate (staging, prod)
+  - ./compose.init.${INIT_MODE:-migrate}.yml
   # Production stack services (profile: stack)
   - ./compose.stack.yml
   # Add project-specific compose files here, e.g.:

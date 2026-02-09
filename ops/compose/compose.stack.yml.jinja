@@ -3,6 +3,10 @@
 # In DevContainer, the Procfile handles these services instead
 #
 # .env contains shared defaults, STAGE_ENV_FILE (set by CLI) contains stage-specific overrides
+#
+# depends_on init works for all stages:
+#   - INIT_MODE=migrate: init waits for services, creates/migrates, stack starts
+#   - INIT_MODE=wait: init waits for services only, stack starts
 
 x-backend-defaults: &backend_defaults
   image: ${IQ_IMAGE:-{{ image_prefix }}-release}:${IQ_IMAGE_TAG:-latest}

@@ -26,9 +26,10 @@ apps:
 #   - env_file: .env file to use (relative to ops/env/)
 #   - compose_file: Compose entry point (default: compose.base.yml)
 #   - profiles: compose profiles to activate:
+#               - init: Site initialization (creates site if not exists)
 #               - db: Database service (postgres/mariadb)
 #               - redis: Redis cache and queue services
-#               - stack: Init + production services (backend, frontend, workers)
+#               - stack: Production services (backend, frontend, workers)
 #               - webdb: Database admin UI
 #               These are COMBINED with COMPOSE_PROFILES from .env (not overwritten)
 #   - extends: inherit from another stage (inherits target if not overridden)
@@ -65,6 +66,7 @@ stages:
     profiles:                           # These are combined with COMPOSE_PROFILES from .env
       - db
       - redis
+      - init
     # image: ghcr.io/your-org/{{ app_name }}/{{ image_prefix }}-dev:latest
     # ↑ Uncomment to pull pre-built image from registry (for new team members).
     #   Without this, the image ({{ image_prefix }}-dev) must be built locally using: bench ops stage build dev
@@ -81,6 +83,7 @@ stages:
 #    profiles:
 #      - db
 #      - redis
+#      - init
 #      - stack
 #
 #  # Staging - uses release image with external services
