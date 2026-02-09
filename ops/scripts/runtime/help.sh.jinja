@@ -1,0 +1,70 @@
+#!/bin/bash
+# Cheatsheet for common development commands
+
+cat << 'EOF'
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                    {{ project_name }} Development Cheatsheet                 ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ OPS COMMANDS (bench ops ...)                                                 │
+├──────────────────────────────────────────────────────────────────────────────┤
+│  bench ops run-tests           Run all tests (iq_tests + ops_tests hooks)    │
+│  bench ops run-tests -a APP    Run tests for specific app                    │
+│  bench ops run-tests -c        Continue on error (don't stop at first fail)  │
+│  bench ops stage ls            List all configured stages                    │
+│  bench ops stage build dev     Build dev image                               │
+│  bench ops dockerfile ls       Show Dockerfile status                        │
+│  bench ops version             Show current version                          │
+│  bench ops version --bump      Bump version number                           │
+│  bench ops update              Updates ops commands & templates from remote  │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ DATABASE COMMANDS                                                            │
+├──────────────────────────────────────────────────────────────────────────────┤
+EOF
+
+# Show DBMS-specific commands
+if [ "$DBMS" = "postgres" ]; then
+cat << 'EOF'
+│  bench pg-migrate              Run PostgreSQL migrations                     │
+│  bench postgres                Open PostgreSQL console                       │
+EOF
+elif [ "$DBMS" = "mariadb" ]; then
+cat << 'EOF'
+│  bench migrate                 Run database migrations                       │
+│  bench mariadb                 Open MariaDB console                          │
+EOF
+else
+cat << 'EOF'
+│  bench migrate                 Run database migrations                       │
+EOF
+fi
+
+cat << 'EOF'
+└──────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ BASIC COMMANDS                                                               │
+├──────────────────────────────────────────────────────────────────────────────┤
+│  bench console                 Open Python/Frappe console                    │
+│  bench clear-cache             Clear all caches                              │
+│  bench build [--app appname]   Build frontend assets for specific apps       │
+│  bench backup [--with-files]   Creates backup                                │
+│  bench restart                 Restart all services                          │
+│  bench setup requirements      Installs pips from pyproject.toml definitions │
+│                   [--dev]      Include dev dependencies                      │
+│  bench export-fixtures         Exports customizing fixtures to app on fs     │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ KEYBOARD SHORTCUTS (in VS Code)                                              │
+├──────────────────────────────────────────────────────────────────────────────┤
+│  SHIFT+ALT+R                   Runs Debugger for selected task               │
+│  F8                            Restart all services                          │
+│  F10                           Run predefined tasks                          │
+│  F12                           Switch container/local view                   │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+EOF

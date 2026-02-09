@@ -78,4 +78,7 @@ FROM dev-base AS final
 
 USER ${IMAGE_USER}
 WORKDIR /home/${IMAGE_USER}/bench
+
+# Add help alias
+RUN echo 'alias h="bash ~/bench/apps/{{ defaults.app_name }}/ops/scripts/runtime/help.sh"' >> ~/.bashrc
 {% endraw %}
