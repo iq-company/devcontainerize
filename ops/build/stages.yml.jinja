@@ -26,7 +26,6 @@ apps:
 #   - env_file: .env file to use (relative to ops/env/)
 #   - compose_file: Compose entry point (default: compose.base.yml)
 #   - profiles: compose profiles to activate:
-#               - init: Site initialization (creates site if not exists)
 #               - db: Database service (postgres/mariadb)
 #               - redis: Redis cache and queue services
 #               - stack: Production services (backend, frontend, workers)
@@ -83,7 +82,6 @@ stages:
 #    profiles:
 #      - db
 #      - redis
-#      - init
 #      - stack
 #
 #  # Staging - uses release image with external services
