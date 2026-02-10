@@ -1,4 +1,4 @@
-upstream backend-server {
+{% raw %}upstream backend-server {
 	server ${BACKEND} fail_timeout=0;
 }
 
@@ -12,7 +12,7 @@ server {
 	port_in_redirect off;
 
 	server_name ${FRAPPE_SITE_NAME_HEADER};
-	root /home/${IMAGE_USER}/bench/sites;
+	root /home/{% endraw %}{{ image_user }}{% raw %}/bench/sites;
 
 	proxy_buffer_size 128k;
 	proxy_buffers 4 256k;
@@ -51,8 +51,17 @@ server {
 		proxy_set_header Upgrade $http_upgrade;
 		proxy_set_header Connection "upgrade";
 		proxy_set_header X-Frappe-Site-Name ${FRAPPE_SITE_NAME_HEADER};
-		proxy_set_header Origin $scheme://$host; # fix for socketio check, as host wont match site-name-header, as the site is *iq*
-		proxy_set_header Host $host;
+
+		# Host/Origin for socketio's internal API calls to backend
+		# Controlled by SOCKETIO_INTERNAL_ROUTING in frontend service:
+		# =1 (default): direct routing to backend (backend:8000)
+		# =0: external routing via nginx ($host) - for distributed systems & resolvable dns names
+		proxy_set_header Host ${SOCKETIO_API_HOST};
+		proxy_set_header Origin ${SOCKETIO_API_ORIGIN};
+
+		# earlier declaration:
+		# proxy_set_header Origin $scheme://$host; # fix for socketio check, as host wont match site-name-header, as the site is *iq*
+		# proxy_set_header Host $host;
 
 		proxy_pass http://socketio-server;
 	}
@@ -117,4 +126,4 @@ server {
 		text/x-component;
 		# text/html is always compressed by HttpGzipModule
 }
-
+{% endraw %}

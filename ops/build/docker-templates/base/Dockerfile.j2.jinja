@@ -59,7 +59,7 @@ RUN set -ex; \
     {{ recipe_raw("cleanup_base") }}
 {% endif %}
 
-COPY --chown=${IMAGE_USER}:${IMAGE_GROUP} --chmod=0644 ops/build/resources/nginx/nginx-template.conf /templates/nginx/iq.conf.template
+COPY --chown=${IMAGE_USER}:${IMAGE_GROUP} --chmod=0644 ops/build/resources/nginx/nginx-template.conf /templates/nginx/{{ project_slug }}.conf.template
 COPY --chown=${IMAGE_USER}:${IMAGE_GROUP} --chmod=0755 ops/build/resources/nginx/nginx-entrypoint.sh /usr/local/bin/nginx-entrypoint.sh
 COPY --chown=${IMAGE_USER}:${IMAGE_GROUP} --chmod=0644 ops/build/resources/nginx/nginx.conf /etc/nginx/nginx.conf
 COPY --chown=${IMAGE_USER}:${IMAGE_GROUP} ops/build/resources/gunicorn/gunicorn.conf.py /srv/gunicorn.conf.py

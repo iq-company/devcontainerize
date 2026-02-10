@@ -41,6 +41,18 @@ if [[ -z "$CLIENT_MAX_BODY_SIZE" ]]; then
     export CLIENT_MAX_BODY_SIZE=50m
 fi
 
+# Socketio API routing: =1 (default): direct routing to backend (backend:8000)
+# Default (unset/0): Route via external nginx ($host) - for resolvable DNS (not localhost)
+if [[ "$SOCKETIO_INTERNAL_ROUTING" == "1" ]]; then
+    echo "SOCKETIO using internal backend routing"
+    export SOCKETIO_HOST="${BACKEND}"
+    export SOCKETIO_ORIGIN="http://${BACKEND}"
+else
+    # Use nginx variables - socketio reaches backend via external nginx
+    export SOCKETIO_HOST='$host'
+    export SOCKETIO_ORIGIN='$scheme://$host'
+fi
+
 # port/listener settings with opt TLS Settings #################
 export LISTENER_PLACEHOLDER="listen 8080;"
 
@@ -68,6 +80,8 @@ fi
 # shellcheck disable=SC2016
 envsubst '${BACKEND}
   ${SOCKETIO}
+  ${SOCKETIO_HOST}
+  ${SOCKETIO_ORIGIN}
   ${UPSTREAM_REAL_IP_ADDRESS}
   ${UPSTREAM_REAL_IP_HEADER}
   ${UPSTREAM_REAL_IP_RECURSIVE}
@@ -75,11 +89,11 @@ envsubst '${BACKEND}
   ${PROXY_READ_TIMEOUT}
   ${LISTENER_PLACEHOLDER}
   ${CLIENT_MAX_BODY_SIZE}' \
-    </templates/nginx/iq.conf.template >/etc/nginx/http.d/iq.conf
+    </templates/nginx/{{ project_slug }}.conf.template >/etc/nginx/http.d/{{ project_slug }}.conf
 
 
 if [ -f "$TLS_PATH/tls.key" ]; then
-  sed -i 's|http://backend-server|https://backend-server|g' /etc/nginx/http.d/iq.conf
+  sed -i 's|http://backend-server|https://backend-server|g' /etc/nginx/http.d/{{ project_slug }}.conf
 fi
 
 exec nginx -g 'daemon off;'

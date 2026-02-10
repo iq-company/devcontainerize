@@ -33,7 +33,11 @@ services:
     environment:
       BACKEND: backend:8000
       SOCKETIO: websocket:9000
-      FRAPPE_SITE_NAME_HEADER: ${IQ_SITE_NAME:-$host}
+      IQ_SITE_NAME_HEADER: ${IQ_SITE_NAME:-$$host}
+      # SOCKETIO_INTERNAL_ROUTING:
+      # Set to 1 if socketio directly connects to backend for auth verification, 0 if
+      # socketio can resolve nginx host (not for localhost, *.local or other unreachable dns names)
+      SOCKETIO_INTERNAL_ROUTING: ${SOCKETIO_INTERNAL_ROUTING:-1}
     ports:
       - "${NGINX_PORT}:8080"
     depends_on:
