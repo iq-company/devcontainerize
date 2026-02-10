@@ -1698,6 +1698,13 @@ def stage_clean(stage_name: str, volumes: bool):
     cmd.append("down")
 
     if volumes:
+        # Always confirm before deleting volumes
+        if not click.confirm(
+            f"⚠️  This will delete all volumes for stage '{stage_name}'. Continue?",
+            default=False
+        ):
+            click.echo("Aborted.")
+            sys.exit(0)
         cmd.append("-v")
 
     click.echo(f"🧹 Cleaning stage '{stage_name}'...")
