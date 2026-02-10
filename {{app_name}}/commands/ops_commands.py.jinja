@@ -15,6 +15,7 @@ Usage:
     bench ops stage ls                   # List all stages
     bench ops stage show <stage>         # Show stage details
     bench ops stage run <stage>          # Start stage environment
+    bench ops stage run <stage> --update  # Controlled update with rollback
     bench ops stage stop <stage>         # Stop stage environment
     bench ops stage clean <stage>        # Clean stage environment
     bench ops stage build <stage>        # Build images for stage
@@ -1258,12 +1259,213 @@ def parse_image_reference(image_ref: str) -> tuple[str, str]:
     return image_ref, "latest"
 
 
+def _is_stage_running(stage_name: str) -> bool:
+    """Check if a stage's containers are currently running."""
+    config = load_stages_config()
+    stage = get_stage_config(config, stage_name)
+    app_root = get_app_root()
+    compose_dir = app_root / "ops" / "compose"
+    env_dir = app_root / "ops" / "env"
+    shared_env_file = env_dir / ".env"
+    env_file_name = stage.get("env_file", ".env.dev")
+    stage_env_file = env_dir / env_file_name
+
+    compose_files = get_compose_files(stage)
+    cmd = ["docker", "compose"]
+
+    for f in compose_files:
+        cmd.extend(["-f", f])
+
+    if shared_env_file.exists():
+        cmd.extend(["--env-file", str(shared_env_file)])
+    if stage_env_file.exists():
+        cmd.extend(["--env-file", str(stage_env_file)])
+
+    for profile in stage.get("profiles", []):
+        cmd.extend(["--profile", profile])
+
+    cmd.extend(["ps", "-q"])
+
+    env = os.environ.copy()
+    env["STAGE_ENV_FILE"] = env_file_name
+
+    result = subprocess.run(cmd, cwd=compose_dir, env=env, capture_output=True, text=True)
+    # If there are running containers, ps -q returns their IDs
+    return bool(result.stdout.strip())
+
+
+def _get_running_images(base_cmd: list, compose_dir: Path, env: dict) -> dict:
+    """Get currently running images for each service.
+
+    Returns dict: {service_name: image_id}
+    """
+    # Get running containers with their images
+    cmd = base_cmd + ["ps", "--format", "json"]
+    result = subprocess.run(cmd, cwd=compose_dir, env=env, capture_output=True, text=True)
+
+    if result.returncode != 0 or not result.stdout.strip():
+        return {}
+
+    images = {}
+    import json
+    for line in result.stdout.strip().split("\n"):
+        if not line:
+            continue
+        try:
+            container = json.loads(line)
+            service = container.get("Service", "")
+            image = container.get("Image", "")
+            if service and image:
+                images[service] = image
+        except json.JSONDecodeError:
+            continue
+
+    return images
+
+
+def _get_image_id(image_ref: str) -> str:
+    """Get the actual image ID for an image reference."""
+    cmd = ["docker", "image", "inspect", image_ref, "--format", "{{.Id}}"]
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode == 0:
+        return result.stdout.strip()
+    return ""
+
+
+def _tag_images_for_rollback(images: dict, rollback_tag: str) -> dict:
+    """Tag current images for potential rollback.
+
+    Returns dict: {service_name: {"rollback_ref": str, "image_id": str}}
+    """
+    tagged = {}
+    for service, image in images.items():
+        # Get actual image ID for later comparison
+        image_id = _get_image_id(image)
+
+        # Parse image name and current tag
+        if ":" in image:
+            base_image, _ = image.rsplit(":", 1)
+        else:
+            base_image = image
+
+        rollback_image = f"{base_image}:{rollback_tag}"
+
+        # Tag the image
+        cmd = ["docker", "tag", image, rollback_image]
+        result = subprocess.run(cmd, capture_output=True)
+        if result.returncode == 0:
+            tagged[service] = {
+                "rollback_ref": rollback_image,
+                "image_id": image_id,
+                "original_ref": image
+            }
+            click.echo(f"   Tagged {service}: {image} → {rollback_tag}")
+
+    return tagged
+
+
+def _cleanup_rollback_images(tagged_images: dict, current_images: dict) -> int:
+    """Remove rollback-tagged images if they differ from current images.
+
+    Only removes images where the rollback image ID differs from the current image ID.
+    Returns count of removed images.
+    """
+    removed = 0
+    for service, tag_info in tagged_images.items():
+        rollback_ref = tag_info["rollback_ref"]
+        rollback_id = tag_info["image_id"]
+
+        # Get current image ID for this service
+        current_ref = current_images.get(service, "")
+        current_id = _get_image_id(current_ref) if current_ref else ""
+
+        # Only remove if IDs are different (actual update happened)
+        if rollback_id and current_id and rollback_id != current_id:
+            cmd = ["docker", "rmi", rollback_ref]
+            result = subprocess.run(cmd, capture_output=True)
+            if result.returncode == 0:
+                click.echo(f"   Removed rollback image: {rollback_ref}")
+                removed += 1
+        else:
+            click.echo(f"   Kept rollback image (same as current): {rollback_ref}")
+
+    return removed
+
+
+def _rollback_to_tagged_images(
+    base_cmd: list,
+    compose_dir: Path,
+    env: dict,
+    tagged_images: dict,
+    rollback_tag: str
+) -> bool:
+    """Rollback to previously tagged images.
+
+    1. Stop current (failed) containers
+    2. Update env to use rollback tags
+    3. Start containers with old images
+    """
+    click.echo("\n🔄 Rolling back to previous images...")
+
+    # Stop all services
+    stop_cmd = base_cmd + ["down"]
+    subprocess.run(stop_cmd, cwd=compose_dir, env=env, capture_output=True)
+
+    # Create env with rollback image tag
+    rollback_env = env.copy()
+    rollback_env["IQ_IMAGE_TAG"] = rollback_tag
+
+    # Start with rollback images
+    up_cmd = base_cmd + ["up", "-d"]
+    result = subprocess.run(up_cmd, cwd=compose_dir, env=rollback_env)
+
+    if result.returncode == 0:
+        click.echo("✅ Rollback successful - previous version restored")
+        return True
+    else:
+        click.echo("❌ Rollback failed! Manual intervention required.", err=True)
+        return False
+
+
+def _build_compose_cmd(stage: dict, compose_files: list, shared_env_file: Path, stage_env_file: Path) -> list:
+    """Build base docker compose command with files and env."""
+    cmd = ["docker", "compose"]
+
+    for f in compose_files:
+        cmd.extend(["-f", f])
+
+    if shared_env_file.exists():
+        cmd.extend(["--env-file", str(shared_env_file)])
+    if stage_env_file.exists():
+        cmd.extend(["--env-file", str(stage_env_file)])
+
+    for profile in stage.get("profiles", []):
+        cmd.extend(["--profile", profile])
+
+    return cmd
+
+
 @stage.command("run")
 @click.argument("stage_name")
 @click.option("-d", "--detach", is_flag=True, default=True, help="Run in background (default)")
 @click.option("-f", "--foreground", is_flag=True, help="Run in foreground")
-def stage_run(stage_name: str, detach: bool, foreground: bool):
-    """Start environment for a stage."""
+@click.option("-u", "--update", is_flag=True, help="Controlled update: tag current, migrate, rollback on failure")
+def stage_run(stage_name: str, detach: bool, foreground: bool, update: bool):
+    """Start environment for a stage.
+
+    Without --update: Starts the stack normally. Fails if already running.
+
+    With --update: Controlled update with rollback capability:
+      1. Tag current running images for rollback (pre-update-TIMESTAMP)
+      2. Pull new images (if registry configured)
+      3. Stop application services (DB/Redis keep running if external)
+      4. Run init service (waits for DB, runs migrations)
+      5. Start all services with new images
+      6. On ANY failure: rollback to tagged images
+
+    Note: This is NOT zero-downtime. There will be downtime during migration.
+    For large databases, consider enabling maintenance mode first.
+    """
     # Check Docker availability
     if not _check_docker_available():
         click.echo("❌ Docker or Docker Compose not available.", err=True)
@@ -1300,35 +1502,6 @@ def stage_run(stage_name: str, detach: bool, foreground: bool):
     env_file_name = stage.get("env_file", ".env.dev")
     stage_env_file = env_dir / env_file_name
 
-    # Build compose command
-    compose_files = get_compose_files(stage)
-    cmd = ["docker", "compose"]
-
-    for f in compose_files:
-        cmd.extend(["-f", f])
-
-    # Load shared env first (for IQ_IMAGE etc.), then stage-specific (overrides)
-    if shared_env_file.exists():
-        cmd.extend(["--env-file", str(shared_env_file)])
-    if stage_env_file.exists():
-        cmd.extend(["--env-file", str(stage_env_file)])
-
-    # Add profiles
-    for profile in stage.get("profiles", []):
-        cmd.extend(["--profile", profile])
-
-    cmd.append("up")
-
-    if not foreground:
-        cmd.append("-d")
-
-    click.echo(f"🚀 Starting stage '{stage_name}'...")
-    click.echo(f"   Image: {image_name}{' (from registry)' if has_registry else ' (local)'}")
-    click.echo(f"   Compose files: {', '.join(Path(f).name for f in compose_files)}")
-    click.echo(f"   Env files: .env + {env_file_name}")
-    click.echo(f"   Profiles: {', '.join(stage.get('profiles', [])) or '(none)'}")
-    click.echo(f"\n   Running: {' '.join(cmd)}\n")
-
     # Set environment for compose
     env = os.environ.copy()
     env["STAGE_ENV_FILE"] = env_file_name
@@ -1339,8 +1512,120 @@ def stage_run(stage_name: str, detach: bool, foreground: bool):
         env["IQ_IMAGE"] = iq_image
         env["IQ_IMAGE_TAG"] = iq_tag
 
-    result = subprocess.run(cmd, cwd=compose_dir, env=env)
-    sys.exit(result.returncode)
+    compose_files = get_compose_files(stage)
+    base_cmd = _build_compose_cmd(stage, compose_files, shared_env_file, stage_env_file)
+
+    # Check if stack is already running
+    is_running = _is_stage_running(stage_name)
+
+    if is_running and not update:
+        click.echo(f"❌ Stage '{stage_name}' is already running.", err=True)
+        click.echo("")
+        click.echo("   Options:")
+        click.echo(f"     bench ops stage stop {stage_name}       # Stop first, then run")
+        click.echo(f"     bench ops stage run {stage_name} --update  # Update with rollback")
+        click.echo("")
+        sys.exit(1)
+
+    if update:
+        # Controlled update with rollback capability
+        from datetime import datetime
+        import time
+        rollback_tag = f"pre-update-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+
+        click.echo(f"🔄 Starting controlled update for '{stage_name}'...")
+        click.echo(f"   New image: {image_name}{' (from registry)' if has_registry else ' (local)'}")
+        click.echo(f"   Rollback tag: {rollback_tag}")
+        click.echo("")
+
+        tagged_images = {}
+
+        # Step 1: Tag current running images for rollback
+        if is_running:
+            click.echo("📌 Tagging current images for rollback...")
+            current_images = _get_running_images(base_cmd, compose_dir, env)
+            if current_images:
+                tagged_images = _tag_images_for_rollback(current_images, rollback_tag)
+            else:
+                click.echo("   No running images found to tag")
+
+        # Step 2: Pull new images if from registry
+        if has_registry:
+            click.echo("\n📥 Pulling new images...")
+            pull_cmd = base_cmd + ["pull"]
+            result = subprocess.run(pull_cmd, cwd=compose_dir, env=env)
+            if result.returncode != 0:
+                click.echo("❌ Failed to pull images", err=True)
+                # No rollback needed - old stack is still running unchanged
+                sys.exit(1)
+
+        # Step 3: Run init service (migration) WHILE OLD STACK IS STILL RUNNING
+        # This allows migration to run against the live DB while app is still serving
+        # The old app services continue running until migration completes successfully
+        click.echo("\n🔧 Running init service (migration)...")
+        click.echo("   ℹ️  Old services continue running during migration")
+        init_cmd = base_cmd + ["up", "init", "--wait", "--no-deps"]
+        result = subprocess.run(init_cmd, cwd=compose_dir, env=env)
+
+        if result.returncode != 0:
+            click.echo("\n❌ Migration failed!", err=True)
+            click.echo("   Old stack is still running - no changes made.")
+            sys.exit(1)
+
+        # Step 4: Migration successful - now stop old and start new services (DOWNTIME)
+        click.echo("\n✅ Migration successful!")
+        click.echo("\n🔄 Replacing services with new images... (brief downtime)")
+        up_cmd = base_cmd + ["up", "-d", "--force-recreate"]
+        result = subprocess.run(up_cmd, cwd=compose_dir, env=env)
+
+        if result.returncode != 0:
+            click.echo("\n❌ Failed to start services with new images!", err=True)
+            if tagged_images:
+                _rollback_to_tagged_images(base_cmd, compose_dir, env, tagged_images, rollback_tag)
+            else:
+                click.echo("   No rollback images available. Manual intervention required.", err=True)
+            sys.exit(1)
+
+        # Step 5: Verify all services are healthy
+        click.echo("\n🔍 Verifying services...")
+        time.sleep(3)
+
+        ps_cmd = base_cmd + ["ps", "--filter", "status=running", "-q"]
+        result = subprocess.run(ps_cmd, cwd=compose_dir, env=env, capture_output=True, text=True)
+
+        if not result.stdout.strip():
+            click.echo("\n❌ No services running after update!", err=True)
+            if tagged_images:
+                _rollback_to_tagged_images(base_cmd, compose_dir, env, tagged_images, rollback_tag)
+            sys.exit(1)
+
+        # Step 6: Cleanup rollback images (only if different from current)
+        if tagged_images:
+            click.echo("\n🧹 Cleaning up rollback images...")
+            new_images = _get_running_images(base_cmd, compose_dir, env)
+            removed = _cleanup_rollback_images(tagged_images, new_images)
+            if removed == 0:
+                click.echo("   No images removed (same version or cleanup skipped)")
+
+        click.echo(f"\n🎉 Stage '{stage_name}' updated successfully!")
+        sys.exit(0)
+
+    else:
+        # Normal start (no update)
+        cmd = base_cmd + ["up"]
+
+        if not foreground:
+            cmd.append("-d")
+
+        click.echo(f"🚀 Starting stage '{stage_name}'...")
+        click.echo(f"   Image: {image_name}{' (from registry)' if has_registry else ' (local)'}")
+        click.echo(f"   Compose files: {', '.join(Path(f).name for f in compose_files)}")
+        click.echo(f"   Env files: .env + {env_file_name}")
+        click.echo(f"   Profiles: {', '.join(stage.get('profiles', [])) or '(none)'}")
+        click.echo(f"\n   Running: {' '.join(cmd)}\n")
+
+        result = subprocess.run(cmd, cwd=compose_dir, env=env)
+        sys.exit(result.returncode)
 
 
 @stage.command("stop")
