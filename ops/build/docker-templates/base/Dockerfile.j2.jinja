@@ -34,6 +34,8 @@ ARG IQ_BRAND_NAME="{{ defaults.project_name }}"
 ENV IQ_BRAND_NAME=${IQ_BRAND_NAME}
 
 ARG IQ_APP_NAME='{{ defaults.app_name }}'
+# Persist IMAGE_USER as ENV for runtime (CMD shell form, entrypoint scripts)
+ENV IMAGE_USER=${IMAGE_USER}
 ENV FRAPPE_STREAM_LOGGING=1
 
 ARG UID=1000
@@ -72,10 +74,8 @@ COPY --chmod=0755 ops/build/resources/wait-for-it.sh /usr/local/bin/wait-for-it
 USER ${IMAGE_USER}
 WORKDIR /home/${IMAGE_USER}
 
-CMD [ \
-    "/home/${IMAGE_USER}/bench/env/bin/gunicorn", \
-    "-c", "/srv/gunicorn.conf.py", \
-    "--chdir=/home/${IMAGE_USER}/bench/sites", \
-    "frappe.app:application" \
-    ]
+CMD /home/${IMAGE_USER}/bench/env/bin/gunicorn \
+    -c /srv/gunicorn.conf.py \
+    --chdir=/home/${IMAGE_USER}/bench/sites \
+    frappe.app:application
 {% endraw %}
