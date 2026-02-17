@@ -31,10 +31,9 @@ ARG IMAGE_GROUP={{ defaults.image_group }}
 
 USER root
 
-# Ensure nginx directories and templates are accessible
-RUN chown -R ${IMAGE_USER}:${IMAGE_GROUP} /etc/nginx /var/log/nginx /run/nginx /templates 2>/dev/null || true; \
-    chmod -R g+rw /etc/nginx /var/log/nginx /run/nginx 2>/dev/null || true; \
-    chmod 644 /templates/nginx/*.template 2>/dev/null || true
+# Nginx dirs are created in base image - just ensure permissions for this user
+# (needed if base was built with different UID/GID)
+RUN chown -R ${IMAGE_USER}:${IMAGE_GROUP} /etc/nginx /var/log/nginx /run/nginx /var/lib/nginx /templates 2>/dev/null || true
 
 RUN find /home/${IMAGE_USER}/bench/sites_assets/ -type d -print0 | xargs -0 -r chmod 775 ; \
     find /home/${IMAGE_USER}/bench/sites_assets/ -type f -print0 | xargs -0 -r chmod 644
@@ -54,10 +53,14 @@ COPY --from=cleaner --chown=${IMAGE_USER}:${IMAGE_GROUP} /home/${IMAGE_USER}/ben
 # Debian: Copy compiled nginx and pcre2
 COPY --from=cleaner --chown=${IMAGE_USER}:${IMAGE_GROUP} /opt/nginx/ /opt/nginx/
 COPY --from=cleaner --chown=${IMAGE_USER}:${IMAGE_GROUP} /opt/pcre2/* /opt/pcre2/
-{% else %}
-# Alpine: nginx is installed via apk, just ensure directories exist
-RUN mkdir -p /var/lib/nginx && chown -R ${IMAGE_USER}:${IMAGE_GROUP} /var/lib/nginx
 {% endif %}
+
+# Fix venv symlinks to use this image's Python (DEV image may have different paths)
+# Then reinstall bench CLI to fix shebangs in entry point scripts
+RUN rm -f /home/${IMAGE_USER}/bench/env/bin/python* && \
+    ln -s "$(which python3)" /home/${IMAGE_USER}/bench/env/bin/python3 && \
+    ln -s "$(which python3)" /home/${IMAGE_USER}/bench/env/bin/python && \
+    /home/${IMAGE_USER}/bench/env/bin/python -m pip install --no-cache-dir frappe-bench
 
 ENV PATH="/home/${IMAGE_USER}/bench/env/bin:${PATH}"
 

@@ -67,7 +67,7 @@ COPY --chmod=0755 ops/build/resources/docker-patches.sh /home/${IMAGE_USER}/dock
 
 USER ${IMAGE_USER}
 
-{{ recipe("fix_nginx_permissions") }}
+{{ recipe("fix_bench_permissions") }}
 
 {{ recipe("verify_build") }}
 

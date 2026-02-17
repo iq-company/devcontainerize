@@ -26,8 +26,12 @@ recipes:
           mesa-gl glib \
           bash jq coreutils curl \
           nginx nginx-mod-http-lua lua-resty-core; \
-      mkdir -p /run/nginx /var/log/nginx /var/lib/nginx/logs /etc/nginx/http.d /templates/nginx; \
+      # Nginx: ensure ALL dirs exist and are writable (used by dev and release)
+      mkdir -p /run/nginx /var/log/nginx /etc/nginx/http.d /templates/nginx \
+               /var/lib/nginx/logs /var/lib/nginx/tmp /var/lib/nginx/client_body /var/lib/nginx/proxy; \
       chown -R ${IMAGE_USER}:${IMAGE_GROUP} /run/nginx /var/log/nginx /var/lib/nginx /etc/nginx /templates; \
+      chmod -R g+rw /run/nginx /var/log/nginx /var/lib/nginx; \
+      # Lua symlinks for compatibility with Debian self-compiled nginx
       mkdir -p /opt/nginx/luajit/share/lua/5.1 /opt/nginx/luajit/lib/lua/5.1; \
       ln -sf /usr/share/lua/5.1/* /opt/nginx/luajit/share/lua/5.1/ 2>/dev/null || true; \
       ln -sf /usr/lib/lua/5.1/* /opt/nginx/luajit/lib/lua/5.1/ 2>/dev/null || true
@@ -106,13 +110,12 @@ recipes:
       chmod -R g+rw /home/${IMAGE_USER}/bench/config; \
       chmod -R g+rw /etc/nginx/
     alpine: |
+      # Nginx dirs are already set up in base image
       set -x; \
       bash /home/${IMAGE_USER}/docker-patches.sh; \
       chown -R ${IMAGE_USER}:${IMAGE_GROUP} /home/${IMAGE_USER}/bench/sites/; \
       chmod -R g+rw /home/${IMAGE_USER}/bench/sites/; \
-      chmod -R g+rw /home/${IMAGE_USER}/bench/config; \
-      chown -R ${IMAGE_USER}:${IMAGE_GROUP} /etc/nginx /run/nginx /var/log/nginx /var/lib/nginx; \
-      chmod -R g+rw /etc/nginx /var/lib/nginx
+      chmod -R g+rw /home/${IMAGE_USER}/bench/config
 
   # --- Frappe cache cleanup ---
   cleanup_frappe:
@@ -140,8 +143,8 @@ recipes:
       COPY --from=builder --chown=${IMAGE_USER}:${IMAGE_GROUP} /opt/pcre2/* /opt/pcre2/
     alpine: ""
 
-  # --- File permissions ---
-  fix_nginx_permissions:
+  # --- File permissions (bench-specific, nginx dirs are in base image) ---
+  fix_bench_permissions:
     debian: |
       chown -R ${IMAGE_USER}:${IMAGE_GROUP} /run/nginx.pid ; \
       mkdir -p /opt/nginx/client_body_temp /opt/nginx/proxy_temp; \
@@ -151,10 +154,7 @@ recipes:
       find /home/${IMAGE_USER}/bench/sites_assets/ -type d -print0 | xargs -0 -r chmod 775 ; \
       find /home/${IMAGE_USER}/bench/sites_assets/ -type f -print0 | xargs -0 -r chmod 644
     alpine: |
-      mkdir -p /run/nginx && chown -R ${IMAGE_USER}:${IMAGE_GROUP} /run/nginx; \
-      mkdir -p /var/lib/nginx/client_body /var/lib/nginx/proxy; \
-      chown -R ${IMAGE_USER}:${IMAGE_GROUP} /var/lib/nginx; \
-      chmod 775 /var/lib/nginx/client_body /var/lib/nginx/proxy; \
+      # Nginx dirs are already created in base image
       chmod 775 /home/${IMAGE_USER}/bench/logs; \
       chmod -R 664 /home/${IMAGE_USER}/bench/logs/* 2>/dev/null || true; \
       find /home/${IMAGE_USER}/bench/sites_assets/ -type d -print0 | xargs -0 -r chmod 775 ; \
