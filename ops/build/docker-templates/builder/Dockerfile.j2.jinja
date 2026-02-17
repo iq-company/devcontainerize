@@ -20,14 +20,16 @@ USER root
 # --- Install build dependencies ---
 {% if base_variant == "alpine" %}
 RUN set -ex; \
-    {{ recipe_raw("install_builder_packages") }}; \
-    pip3 install frappe-bench
+    {{ recipe_raw("install_builder_packages") }}
+
+RUN pip3 install --no-cache-dir --default-timeout=120 frappe-bench
 {% else %}
 RUN set -ex; \
     {{ recipe_raw("install_builder_packages") }}; \
     apt-get autoremove -y; \
-    apt-get clean; \
-    pip3 install frappe-bench
+    apt-get clean
+
+RUN pip3 install --no-cache-dir --default-timeout=120 frappe-bench
 {% endif %}
 
 # Pre-create directories for user compilation

@@ -57,7 +57,6 @@ recipes:
           libbz2-dev cmake libtool m4 automake build-essential \
           {% if default_dbms == 'postgres' %}libpq-dev{% elif default_dbms == 'mariadb' %}libmariadb-dev{% else %}libsqlite3-dev{% endif %}
     alpine: |
-      # Alpine: minimal packages - no compilation needed (nginx via apk)
       apk add --no-cache \
           git make wget \
           jpeg-dev giflib-dev librsvg-dev \
