@@ -52,7 +52,11 @@ if [ ! -d "sites/$IQ_SITE_NAME" ]; then
 	fi
 
 	# Set Redis configuration before site creation/migration
-	bench set-config -g default_site "$IQ_SITE_NAME"
+	# Only set default_site if none is configured yet (avoid overwriting on test site creation)
+	CURRENT_DEFAULT_SITE=$(jq -r '.default_site // empty' sites/common_site_config.json 2>/dev/null || true)
+	if [ -z "$CURRENT_DEFAULT_SITE" ]; then
+		bench set-config -g default_site "$IQ_SITE_NAME"
+	fi
 	bench set-config -g redis_cache "redis://$REDIS_CACHE"
 	bench set-config -g redis_queue "redis://$REDIS_QUEUE"
 	bench set-config -g redis_socketio "redis://$REDIS_QUEUE"
