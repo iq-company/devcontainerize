@@ -23,9 +23,72 @@ ops_tests = [
 ops_release_cleanup = [
     # {"function": "{{app_name}}.utils.release_cleanup.remove_dev_dependencies"},
     {"bash": "find /home/{{image_user}}/bench -name '*.pyc' -delete"},
-    {"script": "../ops/build/resources/container-reduce.sh"},
+    {"script": "../ops/build/resources/release-cleaner.sh"},
     {"bash": "rm -rf /home/{{image_user}}/bench/apps/{{app_name}}/ops", "context": "only_during_build"},
     # Stage-specific cleanup examples:
     # {"bash": "echo 'Staging-only cleanup'", "stages": ["staging"]},
     # {"bash": "echo 'Prod-only cleanup'", "stages": ["prod"]},
 ]
+
+
+# =============================================================================
+# Update Hooks - Custom steps for `bench ops stage run --update`
+# =============================================================================
+# Hook points are called at various stages of the update process.
+# Each hook receives an UpdateContext object with all state information.
+#
+# Available hook points:
+#   - pre_update:    Before any update steps
+#   - post_update:   After all update steps complete successfully
+#   - pre_<step>:    Before a specific step (e.g., pre_migrate, pre_backup)
+#   - post_<step>:   After a specific step completes successfully
+#
+# Available steps:
+#   maintenance, stop_workers, backup, tag_images, pull_images,
+#   migrate, clear_cache, stop_old, start_new, verify, cleanup
+#
+# Hook format:
+#   {"id": "unique_id", "order": 10, "function": "module.path.function_name"}
+#
+# Hooks with the same ID are deduplicated (later definition wins).
+# Hooks are sorted by 'order' before execution (10, 20, 30, ...).
+# If multiple hooks have the same order, their relative order is undefined.
+#
+# Example hook function:
+#   def my_pre_migrate_hook(ctx: UpdateContext) -> bool:
+#       # Return False to abort update, True to continue
+#       return True
+# --------------------------------
+ops_update_hooks = {
+    # Pre-update hooks (before any steps)
+    "pre_update": [
+        # {"id": "notify_start", "order": 10, "function": "{{app_name}}.ops.update_hooks.notify_update_start"},
+    ],
+
+    # Post-update hooks (after successful completion)
+    "post_update": [
+        # {"id": "notify_complete", "order": 10, "function": "{{app_name}}.ops.update_hooks.notify_update_complete"},
+    ],
+
+    # Pre-migrate hooks (before running init service)
+    "pre_migrate": [
+        # {"id": "check_disk_space", "order": 10, "function": "{{app_name}}.ops.update_hooks.check_disk_space"},
+        # {"id": "custom_validation", "order": 20, "function": "{{app_name}}.ops.update_hooks.validate_migration"},
+    ],
+
+    # Post-migrate hooks (after successful migration)
+    "post_migrate": [
+        # {"id": "run_patches", "order": 10, "function": "{{app_name}}.ops.update_hooks.run_custom_patches"},
+        # {"id": "sync_fixtures", "order": 20, "function": "{{app_name}}.ops.update_hooks.sync_fixtures"},
+    ],
+
+    # Pre-backup hooks
+    "pre_backup": [
+        # {"id": "check_backup_space", "order": 10, "function": "{{app_name}}.ops.update_hooks.check_backup_space"},
+    ],
+
+    # Post-backup hooks
+    "post_backup": [
+        # {"id": "upload_backup", "order": 10, "function": "{{app_name}}.ops.update_hooks.upload_backup_to_s3"},
+    ],
+}

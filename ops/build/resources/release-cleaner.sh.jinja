@@ -1,0 +1,37 @@
+#!/usr/bin/bash
+# =============================================================================
+# Release Cleaner (Template Script)
+# =============================================================================
+# Runs in CLEANER stage of Dockerfile.release (FROM dev image)
+# Called via ops_release_cleanup hooks → call_root_iq_release_dist.py
+#
+# This script handles file/directory cleanups only.
+# pip-related cleanups are in release-final.sh (runs AFTER pip install).
+# =============================================================================
+
+set -e
+
+rm -rf apps/iq_core/.devcontainer
+
+# Clean up unnecessary node_modules (CVE reduction)
+cd /home/{{ image_user }}/bench/apps/frappe &&
+	rm -rf esbuild &&
+	rm -rf node_modules/@babel &&
+	rm -rf node_modules/@nodelib &&
+	rm -rf node_modules/typescript &&
+	rm -rf node_modules/html-janitor &&
+	rm -rf node_modules/micromatch &&
+	rm -rf node_modules/fast-glob &&
+	rm -rf node_modules/loadjs &&
+	rm -rf node_modules/esbuild-linux-64 &&
+	rm -rf node_modules/esbuild* &&
+	# reduce unneeded files in node_modules by yarn
+	yarn autoclean --init && yarn autoclean --force
+
+# Remove .git and other dev directories from apps
+# (skip if LOCAL_DEV_ENV=true, where local git will be mounted)
+if [ "$LOCAL_DEV_ENV" != "true" ]; then
+	/usr/bin/find /home/{{ image_user }}/bench/apps -type d \( -name ".cache" -o -name ".config" -o -name ".yarn" -o -name ".git" \) -exec rm -rf {} + 2>/dev/null || true
+	/usr/bin/find /home/{{ image_user }}/bench/apps -mindepth 1 -path "*/.git" -exec rm -rf {} + 2>/dev/null || true
+	/usr/bin/find /home/{{ image_user }}/bench/apps -mindepth 1 -path "*/.github" -exec rm -rf {} + 2>/dev/null || true
+fi

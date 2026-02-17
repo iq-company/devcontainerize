@@ -92,7 +92,7 @@ for cleanup_task in all_cleanup_tasks:
 
     elif "script" in cleanup_task:
         for app in installed_apps:
-            # Script path is relative to app directory (e.g., "../ops/build/resources/container-reduce.sh")
+            # Script path is relative to app directory (e.g., "../ops/build/resources/release-cleaner.sh")
             app_dir = os.path.join(apps_path, app, app)
             script_path = os.path.normpath(os.path.join(app_dir, cleanup_task["script"]))
             if os.path.exists(script_path):

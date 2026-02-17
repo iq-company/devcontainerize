@@ -142,7 +142,8 @@ app/
 │   │   │   ├── Dockerfile.dev
 │   │   │   └── Dockerfile.release
 │   │   ├── resources/             # Files copied into images
-│   │   │   ├── container-reduce.sh
+│   │   │   ├── release-cleaner.sh
+│   │   │   ├── release-final.sh
 │   │   │   ├── setup_bench_apps.py
 │   │   │   ├── nginx/
 │   │   │   └── gunicorn/
@@ -554,12 +555,13 @@ ops/env/
 
 | In `.env` (shared) | In `.env.STAGE` (stage-specific) |
 |--------------------|----------------------------------|
-| `IQ_IMAGE`, `IQ_IMAGE_TAG` | `COMPOSE_PROJECT_NAME` (unique per stage) |
-| `IQ_SITE_NAME`, `IQ_BRAND_NAME` | `DBMS`, `DB_HOST`, `DB_PORT` |
-| `REDIS_*`, `SOCKETIO_PORT` | `DB_*` credentials |
-| `NGINX_PORT`, `WEBDB_PORT` (defaults) | `IQ_ADMIN_PW` |
-| `COMPOSE_PROFILES` (defaults) | `OPENID_*` settings |
+| `IQ_SITE_NAME`, `IQ_BRAND_NAME` | `COMPOSE_PROJECT_NAME` (unique per stage) |
+| `REDIS_*`, `SOCKETIO_PORT` | `DBMS`, `DB_HOST`, `DB_PORT` |
+| `NGINX_PORT`, `WEBDB_PORT` (defaults) | `DB_*` credentials |
+| `COMPOSE_PROFILES` (defaults) | `IQ_ADMIN_PW` |
+| | `OPENID_*` settings |
 | | `HOST_UID`, `HOST_GID` (dev only) |
+| | `IQ_IMAGE`, `IQ_IMAGE_TAG` (optional override) |
 
 Stage-specific files can **override** any shared value:
 ```bash
@@ -569,6 +571,28 @@ COMPOSE_PROFILES=
 # .env.dev (override for dev stage)
 COMPOSE_PROFILES=ocr,monitoring
 ```
+
+### Docker Image Resolution
+
+The Docker image used for `bench ops stage run` follows this priority:
+
+```
+1. .env.{stage}     ← IQ_IMAGE=... (highest priority)
+2. .env             ← IQ_IMAGE=... (shared)
+3. stages.yml       ← target: or image: (fallback)
+4. Docker Compose   ← ${IQ_IMAGE:-iq-release} (last fallback)
+```
+
+**How it works:**
+
+| Scenario | Image Source |
+|----------|--------------|
+| `IQ_IMAGE=my-test` in `.env.local` | `my-test` (from .env) |
+| No `IQ_IMAGE` in .env, `target: release` in stages.yml | `iq-release` (from stages.yml) |
+| No `IQ_IMAGE` in .env, `image: ghcr.io/org/app:v1` in stages.yml | `ghcr.io/org/app:v1` (from stages.yml) |
+| `IQ_IMAGE=local-build` in .env, `image: ghcr.io/...` in stages.yml | `local-build` (.env wins) |
+
+**Note:** The `.env.dev` file sets `IQ_IMAGE=iq-dev` for the DevContainer. Other stages typically don't need to set it explicitly - the fallback to `stages.yml` handles it.
 
 ### Templates (committed to Git)
 
@@ -604,8 +628,8 @@ echo $DBMS
 
 | Variable | Location | Description |
 |----------|----------|-------------|
-| `IQ_IMAGE` | shared | Docker image name |
-| `IQ_IMAGE_TAG` | shared | Docker image tag |
+| `IQ_IMAGE` | stage (optional) | Docker image name. Falls back to `stages.yml` |
+| `IQ_IMAGE_TAG` | stage (optional) | Docker image tag. Falls back to `latest` |
 | `IQ_SITE_NAME` | shared | Frappe site name |
 | `DBMS` | stage | Database type (postgres, mariadb, sqlite) |
 | `DB_HOST` | stage | Database host |

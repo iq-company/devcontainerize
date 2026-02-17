@@ -33,10 +33,18 @@ apps:
 #               These are COMBINED with COMPOSE_PROFILES from .env (not overwritten)
 #   - extends: inherit from another stage (inherits target if not overridden)
 #
-# Image source (where to pull the image from):
-#   - image: Full image reference to pull (e.g., ghcr.io/org/repo/app-dev:latest)
-#            If not set, expects a locally built image (see: bench ops stage build)
-#            This is independent from the push registry used during builds.
+# Image resolution for `bench ops stage run`:
+#   Priority: .env files > stages.yml > Docker Compose default
+#
+#   1. If IQ_IMAGE is set in .env.{stage} or .env → uses that value
+#   2. If not set in .env, falls back to stages.yml:
+#      - If `image:` is set → uses that (for registry pulls)
+#      - If only `target:` is set → derives image name (e.g., target: release → {{ image_prefix }}-release)
+#   3. Final fallback: Docker Compose default (${IQ_IMAGE:-{{ image_prefix }}-release})
+#
+#   Properties:
+#   - image: Full image reference (e.g., ghcr.io/org/app:v1). Used as FALLBACK if not in .env.
+#            Also used for build/push operations (bench ops build --push).
 #
 # App customization (requires separate image):
 #   - apps: override app refs or ignore apps

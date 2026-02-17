@@ -19,12 +19,14 @@ recipes:
       apt-get update && apt-get install --no-install-recommends -y \
           wget gettext-base file \
           libgl1-mesa-glx libglib2.0-0 \
+          {% if default_dbms == 'postgres' %}postgresql-client libpq5{% elif default_dbms == 'mariadb' %}mariadb-client libmariadb3{% else %}sqlite3{% endif %} \
           wait-for-it jq nginx
     alpine: |
       apk add --no-cache \
           wget gettext file \
           mesa-gl glib \
           bash jq coreutils curl \
+          {% if default_dbms == 'postgres' %}postgresql-client libpq{% elif default_dbms == 'mariadb' %}mariadb-client mariadb-connector-c{% else %}sqlite{% endif %} \
           nginx nginx-mod-http-lua lua-resty-core; \
       # Nginx: ensure ALL dirs exist and are writable (used by dev and release)
       mkdir -p /run/nginx /var/log/nginx /etc/nginx/http.d /templates/nginx \
@@ -78,14 +80,12 @@ recipes:
       apt-get update && apt-get install -y --no-install-recommends \
           git jq vim gcc libbz2-dev cmake libtool m4 automake \
           build-essential wget libreadline-dev zlib1g-dev libssl-dev \
-          wkhtmltopdf xvfb libfontconfig \
-          {% if default_dbms == 'postgres' %}postgresql-client libpq5{% elif default_dbms == 'mariadb' %}mariadb-client libmariadb3{% else %}sqlite3{% endif %}
+          wkhtmltopdf xvfb libfontconfig
     alpine: |
       apk add --no-cache \
           git jq vim gcc musl-dev bzip2-dev cmake libtool m4 automake \
           make wget readline-dev zlib-dev openssl-dev \
-          python3-dev linux-headers libffi-dev \
-          {% if default_dbms == 'postgres' %}postgresql-client libpq{% elif default_dbms == 'mariadb' %}mariadb-client mariadb-connector-c{% else %}sqlite{% endif %}
+          python3-dev linux-headers libffi-dev
 
   # --- Setup bench apps ---
   setup_bench_apps:

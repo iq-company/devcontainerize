@@ -105,7 +105,7 @@ ops_release_cleanup = [
     {"bash": "find /home/iqa/bench -name '*.pyc' -delete"},
 
     # Run a script (path relative to app directory)
-    {"script": "../ops/build/resources/container-reduce.sh"},
+    {"script": "../ops/build/resources/release-cleaner.sh"},
 
     # Run a Python function
     {"function": "myapp.utils.cleanup.remove_dev_files"},
@@ -190,8 +190,8 @@ ops_release_cleanup = [
     {"bash": "rm -rf /home/iqa/bench/apps/*/tests"},
     {"bash": "rm -rf /home/iqa/bench/apps/*/.git"},
 
-    # Run container-reduce script
-    {"script": "../ops/build/resources/container-reduce.sh"},
+    # Run release-cleaner script
+    {"script": "../ops/build/resources/release-cleaner.sh"},
 ]
 ```
 
