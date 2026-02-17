@@ -27,6 +27,11 @@ echo "  Removing 'import git' from bench modules..."
 sed -i 's/import git//' "${SITE_PACKAGES}/bench/utils/app.py" 2>/dev/null || true
 sed -i 's/import git//' "${SITE_PACKAGES}/bench/app.py" 2>/dev/null || true
 
+# Remove gitpython entirely (git binary not available in release image)
+# gitpython's __init__.py runs git --version on import, causing shell errors
+echo "  Removing gitpython from venv..."
+"${BENCH_PATH}/env/bin/python" -m pip uninstall -y GitPython gitdb smmap 2>/dev/null || true
+
 # Remove pip from venv (CVE reduction, not needed at runtime)
 echo "  Removing pip from venv..."
 "${BENCH_PATH}/env/bin/python" -m pip uninstall -y pip 2>/dev/null || true

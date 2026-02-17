@@ -32,7 +32,7 @@ recipes:
       mkdir -p /run/nginx /var/log/nginx /etc/nginx/http.d /templates/nginx \
                /var/lib/nginx/logs /var/lib/nginx/tmp /var/lib/nginx/client_body /var/lib/nginx/proxy; \
       chown -R ${IMAGE_USER}:${IMAGE_GROUP} /run/nginx /var/log/nginx /var/lib/nginx /etc/nginx /templates; \
-      chmod -R g+rw /run/nginx /var/log/nginx /var/lib/nginx; \
+      chmod -R g+rw /run/nginx /var/log/nginx /var/lib/nginx /etc/nginx /templates; \
       # Lua symlinks for compatibility with Debian self-compiled nginx
       mkdir -p /opt/nginx/luajit/share/lua/5.1 /opt/nginx/luajit/lib/lua/5.1; \
       ln -sf /usr/share/lua/5.1/* /opt/nginx/luajit/share/lua/5.1/ 2>/dev/null || true; \
