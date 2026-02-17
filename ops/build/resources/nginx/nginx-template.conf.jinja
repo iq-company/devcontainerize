@@ -18,13 +18,13 @@ server {
 	proxy_buffers 4 256k;
 	proxy_busy_buffers_size 256k;
 
-	# Adds X-Frame-Options "SAMEORIGIN" header by default, but not if it, or a CSP definition was already specified in the backend response.
+	# Set CSP frame-ancestors (modern replacement for X-Frame-Options: SAMEORIGIN)
+	# Only sets it if no CSP was already defined by the backend response
 	header_filter_by_lua_block {
-		local xfo = ngx.header["X-Frame-Options"]
 		local csp = ngx.header["Content-Security-Policy"]
 
-		if not xfo and not csp then
-			ngx.header["X-Frame-Options"] = "SAMEORIGIN"
+		if not csp then
+			ngx.header["Content-Security-Policy"] = "frame-ancestors 'self'"
 		end
 	}
 
@@ -56,8 +56,8 @@ server {
 		# Controlled by SOCKETIO_INTERNAL_ROUTING in frontend service:
 		# =1 (default): direct routing to backend (backend:8000)
 		# =0: external routing via nginx ($host) - for distributed systems & resolvable dns names
-		proxy_set_header Host ${SOCKETIO_API_HOST};
-		proxy_set_header Origin ${SOCKETIO_API_ORIGIN};
+		proxy_set_header Host ${SOCKETIO_HOST};
+		proxy_set_header Origin ${SOCKETIO_ORIGIN};
 
 		# earlier declaration:
 		# proxy_set_header Origin $scheme://$host; # fix for socketio check, as host wont match site-name-header, as the site is *iq*

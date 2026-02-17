@@ -1,6 +1,16 @@
 // Place your key bindings in this file to override the defaults
 [
   {
+    "key": "ctrl+f",
+    "command": "-extension.vim_ctrl+f",
+    "when": "editorFocus && vim.active && !inDebugRepl"
+  },
+  {
+    "key": "ctrl+f",
+    "command": "actions.find",
+    "when": "editorFocus"
+  },
+  {
       "key": "shift+alt+r",
       "command": "workbench.action.debug.start",
       "when": "config.iq.keybindings.enabled && !inDebugMode"
@@ -85,5 +95,20 @@
     "key": "f12",
     "command": "remote-containers.reopenInContainer",
     "when": "config.iq.keybindings.enabled && !remoteName"
+  },
+  {
+    "key": "ctrl+j",
+    "command": "workbench.action.togglePanel",
+    "when": "!panelVisible"
+  },
+  {
+    "key": "ctrl+j",
+    "command": "workbench.action.focusPanel",
+    "when": "panelVisible && !panelFocus"
+  },
+  {
+    "key": "ctrl+j",
+    "command": "workbench.action.focusActiveEditorGroup",
+    "when": "panelFocus"
   }
 ]
