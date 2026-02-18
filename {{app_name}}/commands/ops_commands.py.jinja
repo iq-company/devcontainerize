@@ -12,6 +12,7 @@ Usage:
     bench ops build --images             # Build Docker images
     bench ops run-tests                  # Run tests
     bench ops release-dist               # Execute release cleanup
+    bench ops trivy <stage>              # Scan stage image for CVEs
     bench ops stage ls                   # List all stages
     bench ops stage show <stage>         # Show stage details
     bench ops stage run <stage>          # Start stage environment
@@ -345,11 +346,17 @@ def dockerfile_ls():
         else:
             click.echo(f"   {key}: (not set)")
 
+    # Show active variant from settings
+    active_variant = _get_dockerfile_setting("variant", "debian")
+    click.echo("")
+    click.echo(f"🔧 Active variant: {active_variant}")
+    click.echo("   (auto-saved when using -v/--variant)")
+
     # Show commands
     click.echo("")
     click.echo("📝 Commands:")
-    click.echo("   bench ops dockerfile create             # Create all (debian)")
-    click.echo("   bench ops dockerfile create -v alpine   # Create for Alpine")
+    click.echo(f"   bench ops dockerfile create             # Create all ({active_variant})")
+    click.echo("   bench ops dockerfile create -v alpine   # Create for Alpine (saves choice)")
     click.echo("   bench ops dockerfile update             # Regenerate existing")
     click.echo("")
     click.echo(f"   To delete: rm {docker_dir.relative_to(app_root)}/Dockerfile.*")
@@ -373,7 +380,7 @@ def _check_variant_defaults(variant: str, defaults: dict) -> dict:
 
 
 @dockerfile.command("create")
-@click.option("-v", "--variant", default="debian", help="Platform variant (debian, alpine, ...)")
+@click.option("-v", "--variant", default=None, help="Platform variant (debian, alpine, ...)")
 @click.option("-t", "--targets", multiple=True, help="Specific targets (default: all)")
 @click.option("--dry-run", is_flag=True, help="Preview without writing")
 @click.option("--diff", is_flag=True, help="Show diff of changes")
@@ -381,17 +388,23 @@ def dockerfile_create(variant: str, targets: tuple, dry_run: bool, diff: bool):
     """Create Dockerfiles from templates.
 
     Generates Dockerfiles in ops/build/docker/ from templates.
+    The --variant choice is persisted in build-settings.yml for subsequent calls.
 
     Examples:
-        bench ops dockerfile create               # Create all (debian)
-        bench ops dockerfile create -v alpine    # Create for Alpine
+        bench ops dockerfile create               # Create all (saved or default variant)
+        bench ops dockerfile create -v alpine    # Create for Alpine (saves choice)
         bench ops dockerfile create -t dev       # Create specific target
     """
-    _run_dockerfile_gen(variant, targets, dry_run, diff, "Creating")
+    variant_explicit = variant is not None
+    if not variant:
+        variant = _get_dockerfile_setting("variant", "debian")
+
+    _run_dockerfile_gen(variant, targets, dry_run, diff, "Creating",
+                        save_variant=variant_explicit)
 
 
 @dockerfile.command("update")
-@click.option("-v", "--variant", help="Platform variant (default: detect from existing)")
+@click.option("-v", "--variant", default=None, help="Platform variant (default: from settings)")
 @click.option("-t", "--targets", multiple=True, help="Specific targets (default: all)")
 @click.option("--dry-run", is_flag=True, help="Preview without writing")
 @click.option("--diff", is_flag=True, help="Show diff of changes")
@@ -399,19 +412,72 @@ def dockerfile_update(variant: str, targets: tuple, dry_run: bool, diff: bool):
     """Regenerate existing Dockerfiles.
 
     Use after updating templates or recipes.
+    The --variant choice is persisted in build-settings.yml for subsequent calls.
 
     Examples:
-        bench ops dockerfile update              # Regenerate all
+        bench ops dockerfile update              # Regenerate all (saved variant)
         bench ops dockerfile update -t dev       # Regenerate specific target
+        bench ops dockerfile update -v alpine    # Switch to Alpine (saves choice)
     """
-    # Default to debian if no variant specified
+    variant_explicit = variant is not None
     if not variant:
-        variant = "debian"
+        variant = _get_dockerfile_setting("variant", "debian")
 
-    _run_dockerfile_gen(variant, targets, dry_run, diff, "Updating")
+    _run_dockerfile_gen(variant, targets, dry_run, diff, "Updating",
+                        save_variant=variant_explicit)
 
 
-def _run_dockerfile_gen(variant: str, targets: tuple, dry_run: bool, diff: bool, action: str):
+def _load_build_settings() -> tuple[dict, Path]:
+    """Load build-settings.yml and return (data, path)."""
+    app_root = get_app_root()
+    settings_file = app_root / "ops" / "build" / "build-settings.yml"
+
+    if not settings_file.exists():
+        return {}, settings_file
+
+    with open(settings_file) as f:
+        data = yaml.safe_load(f) or {}
+    return data, settings_file
+
+
+def _get_dockerfile_setting(key: str, default: str = "") -> str:
+    """Read a value from dockerfile_settings in build-settings.yml."""
+    data, _ = _load_build_settings()
+    settings = data.get("dockerfile_settings", {})
+    return settings.get(key, default) if settings else default
+
+
+def _save_dockerfile_settings(**kwargs):
+    """Save key-value pairs to dockerfile_settings in build-settings.yml.
+
+    Only updates the provided keys, preserving the rest of the file.
+    """
+    app_root = get_app_root()
+    settings_file = app_root / "ops" / "build" / "build-settings.yml"
+
+    if not settings_file.exists():
+        return
+
+    with open(settings_file) as f:
+        data = yaml.safe_load(f) or {}
+
+    if "dockerfile_settings" not in data:
+        data["dockerfile_settings"] = {}
+
+    changed = False
+    for key, value in kwargs.items():
+        if data["dockerfile_settings"].get(key) != value:
+            data["dockerfile_settings"][key] = value
+            changed = True
+
+    if changed:
+        with open(settings_file, "w") as f:
+            yaml.dump(data, f, default_flow_style=False, sort_keys=False)
+        click.echo(f"   💾 Saved dockerfile settings: {', '.join(f'{k}={v}' for k, v in kwargs.items())}")
+
+
+def _run_dockerfile_gen(variant: str, targets: tuple, dry_run: bool, diff: bool,
+                        action: str, save_variant: bool = False):
     """Internal helper to run baker gen-docker."""
     app_root = get_app_root()
     settings_file = app_root / "ops" / "build" / "build-settings.yml"
@@ -431,6 +497,11 @@ def _run_dockerfile_gen(variant: str, targets: tuple, dry_run: bool, diff: bool,
         cmd.append("--diff")
 
     click.echo(f"🔧 {action} Dockerfiles (variant: {variant})...")
+
+    # Save variant to settings if explicitly provided
+    if save_variant and not dry_run:
+        _save_dockerfile_settings(variant=variant)
+
     result = subprocess.run(cmd, cwd=app_root)
 
     if result.returncode == 0:
@@ -1940,6 +2011,180 @@ def stage_rm(stage_name: str, yes: bool, no_delete_env: bool):
             click.echo(f"✅ Deleted {env_file.name}")
         else:
             click.echo(f"   Kept {env_file.name}")
+
+
+# =============================================================================
+# Trivy CVE Scanning Command
+# =============================================================================
+
+def _docker_socket_available() -> bool:
+    """Check if the Docker socket is accessible (needed for trivy container scanning)."""
+    import socket as sock
+    docker_sock = "/var/run/docker.sock"
+    if not os.path.exists(docker_sock):
+        return False
+    try:
+        s = sock.socket(sock.AF_UNIX, sock.SOCK_STREAM)
+        s.connect(docker_sock)
+        s.close()
+        return True
+    except (PermissionError, ConnectionRefusedError, OSError):
+        return False
+
+
+def _get_stage_image_with_tag(config: dict, stage_name: str) -> str:
+    """Resolve full image:tag for a stage, following the env > stages.yml > default priority."""
+    stage = get_stage_config(config, stage_name)
+    app_root = get_app_root()
+    env_dir = app_root / "ops" / "env"
+    shared_env_file = env_dir / ".env"
+    env_file_name = stage.get("env_file", f".env.{stage_name}")
+    stage_env_file = env_dir / env_file_name
+
+    # Priority: .env files > stages.yml > default
+    iq_image = (
+        _get_env_value(stage_env_file, "IQ_IMAGE") or
+        _get_env_value(shared_env_file, "IQ_IMAGE")
+    )
+    iq_tag = (
+        _get_env_value(stage_env_file, "IQ_IMAGE_TAG") or
+        _get_env_value(shared_env_file, "IQ_IMAGE_TAG")
+    )
+
+    if iq_image:
+        return f"{iq_image}:{iq_tag}" if iq_tag else iq_image
+
+    # Fallback to stages.yml
+    if "image" in stage:
+        return stage["image"]
+
+    # Derive from target
+    image_name = get_stage_image_name(config, stage_name)
+
+    # Try to get tag from VERSION file
+    version_file = app_root / "ops" / "build" / "VERSION"
+    tag = version_file.read_text().strip() if version_file.exists() else "latest"
+
+    return f"{image_name}:{tag}"
+
+
+@ops.command("trivy")
+@click.argument("stage_name")
+@click.option("-s", "--severity", default="HIGH,CRITICAL", help="Severity filter (default: HIGH,CRITICAL)")
+@click.option("--full", is_flag=True, help="Show all severities (no filter)")
+@click.option("-f", "--format", "output_format", default="table",
+              type=click.Choice(["table", "json", "sarif"]), help="Output format")
+@click.option("-o", "--output", "output_file", help="Write results to file")
+@click.option("--exit-code", "exit_code", type=int, default=None,
+              help="Exit code when vulnerabilities found (e.g., 1 for CI)")
+def trivy_scan(stage_name: str, severity: str, full: bool, output_format: str,
+               output_file: str, exit_code: int):
+    """Scan a stage's Docker image for CVEs using Trivy.
+
+    Runs Trivy as a Docker container to scan the image associated with the
+    given stage. If Docker is not accessible (e.g., inside a DevContainer
+    without socket mount), the command prints the ready-to-use docker command.
+
+    Examples:
+        bench ops trivy local                    # Scan local stage image
+        bench ops trivy local --full             # Show all severities
+        bench ops trivy prod -f json -o report   # JSON report to file
+        bench ops trivy local --exit-code 1      # Fail if vulns found (CI)
+    """
+    config = load_stages_config()
+
+    # Validate stage exists
+    stages = config.get("stages", {})
+    if stage_name not in stages:
+        available = ", ".join(stages.keys()) if stages else "none"
+        click.echo(f"❌ Stage '{stage_name}' not found. Available: {available}")
+        sys.exit(1)
+
+    # Resolve the image to scan
+    image_ref = _get_stage_image_with_tag(config, stage_name)
+    click.echo(f"🔍 Trivy CVE scan for stage '{stage_name}'")
+    click.echo(f"   Image: {image_ref}")
+    click.echo("")
+
+    # Build the trivy docker command
+    trivy_cmd = ["docker", "run", "--rm"]
+
+    # Mount Docker socket so trivy can access local images
+    trivy_cmd.extend(["-v", "/var/run/docker.sock:/var/run/docker.sock"])
+
+    # If output file is requested, mount a volume for it
+    if output_file:
+        output_dir = os.path.abspath(os.path.dirname(output_file) or ".")
+        output_name = os.path.basename(output_file)
+        trivy_cmd.extend(["-v", f"{output_dir}:/output"])
+
+    trivy_cmd.append("aquasec/trivy")
+    trivy_cmd.extend(["image"])
+
+    # Severity filter
+    if not full:
+        trivy_cmd.extend(["--severity", severity])
+
+    # Output format
+    trivy_cmd.extend(["--format", output_format])
+
+    # Output file
+    if output_file:
+        trivy_cmd.extend(["--output", f"/output/{output_name}"])
+
+    # Exit code
+    if exit_code is not None:
+        trivy_cmd.extend(["--exit-code", str(exit_code)])
+
+    # The image to scan
+    trivy_cmd.append(image_ref)
+
+    # Check if Docker is available and socket is accessible
+    has_docker = _check_docker_available()
+    has_socket = _docker_socket_available()
+
+    if has_docker and has_socket:
+        # Run trivy directly
+        click.echo(f"   Running: {' '.join(trivy_cmd)}\n")
+        result = subprocess.run(trivy_cmd)
+        if output_file and result.returncode == 0:
+            click.echo(f"\n📄 Report written to: {output_file}")
+        sys.exit(result.returncode)
+    else:
+        # Cannot run trivy - show the command for manual execution
+        cmd_str = " \\\n    ".join(trivy_cmd)
+
+        if not has_docker:
+            click.echo("ℹ️  Docker is not available in this environment.")
+        elif not has_socket:
+            click.echo("ℹ️  Docker socket (/var/run/docker.sock) is not accessible.")
+            click.echo("   Inside a DevContainer, you can mount it by adding to devcontainer.json:")
+            click.echo("")
+            click.echo('   "mounts": [')
+            click.echo('     "source=/var/run/docker.sock,target=/var/run/docker.sock,type=bind"')
+            click.echo('   ]')
+
+        click.echo("")
+        click.echo("   Run the following command from a host terminal with Docker access:")
+        click.echo("")
+        click.echo(f"   {cmd_str}")
+        click.echo("")
+
+        # Also show a simpler version without socket mount if the image is in a registry
+        if "/" in image_ref:
+            # Image seems to be a registry reference - trivy can pull it directly
+            simple_cmd = ["docker", "run", "--rm", "aquasec/trivy", "image"]
+            if not full:
+                simple_cmd.extend(["--severity", severity])
+            simple_cmd.extend(["--format", output_format])
+            if exit_code is not None:
+                simple_cmd.extend(["--exit-code", str(exit_code)])
+            simple_cmd.append(image_ref)
+            click.echo("   Or, if the image is accessible from a registry (no socket needed):")
+            click.echo(f"   {' '.join(simple_cmd)}")
+            click.echo("")
+
+        sys.exit(0)
 
 
 # =============================================================================
