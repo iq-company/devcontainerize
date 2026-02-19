@@ -2,8 +2,43 @@
 
 set -e # Exit on errors
 
-# Source the environment file to get all necessary variables
-# The file is created by init_env_files.sh
+# =============================================================================
+# DevContainer Root Guard: fix volume ownership, then run init as app user
+# =============================================================================
+# When started as root (compose.dev.override.yml: user: "0"), this block:
+#   1. chowns volumes to HOST_UID:HOST_GID so the app user can write
+#   2. Updates {{ image_user }}'s UID/GID in /etc/passwd to match HOST_UID/HOST_GID
+#   3. Re-execs this script as the (now UID-adjusted) app user
+# This is needed because init_site.sh runs yarn install, bench setup etc.
+# which require write access to the bind-mounted app directory.
+# In release/staging: init runs as the app user directly → this block is skipped.
+# =============================================================================
+if [ "$(id -u)" = "0" ]; then
+    IMAGE_USER="${IMAGE_USER:-{{ image_user }}}"
+
+    # If HOST_UID is set and differs from app user, fix ownership + UID
+    if [ -n "${HOST_UID}" ]; then
+        CUR_UID=$(id -u "${IMAGE_USER}")
+        CUR_GID=$(id -g "${IMAGE_USER}")
+        TARGET_GID="${HOST_GID:-${CUR_GID}}"
+
+        if [ "${HOST_UID}" != "${CUR_UID}" ] || [ "${TARGET_GID}" != "${CUR_GID}" ]; then
+            echo "Adjusting UID/GID: ${IMAGE_USER} ${CUR_UID}:${CUR_GID} → ${HOST_UID}:${TARGET_GID} ..."
+
+            # Fix ownership of entire home dir BEFORE running init
+            chown -R "${HOST_UID}:${TARGET_GID}" "/home/${IMAGE_USER}"
+
+            # Update UID/GID in passwd/group so {{ image_user }} runs with HOST_UID
+            # (Alpine-compatible, no usermod needed)
+            sed -i "s/^${IMAGE_USER}:x:${CUR_UID}:${CUR_GID}/${IMAGE_USER}:x:${HOST_UID}:${TARGET_GID}/" /etc/passwd
+            sed -i "s/^${IMAGE_USER}:x:${CUR_GID}/${IMAGE_USER}:x:${TARGET_GID}/" /etc/group
+        fi
+    fi
+
+    # Always re-exec as app user (never run bench as root)
+    # Note: no -p flag, so su resets HOME to /home/{{ image_user }} (not /root)
+    exec su -s /bin/bash "${IMAGE_USER}" -c "$(realpath "$0")"
+fi
 
 DB_SCHEMA=${DB_SCHEMA:-iq_schema}
 

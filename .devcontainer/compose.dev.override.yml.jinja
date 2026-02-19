@@ -48,24 +48,19 @@ services:
   # This init service REPLACES the one from compose.init.migrate.yml when
   # compose.dev.override.yml is loaded. Key differences:
   # - Uses backend_defaults anchor → gets apps + vscode-host volumes
-  # - Bind mount of {{ app_name }} source → runtime scripts always from host FS
   # - DEV_CONTAINER=1 via environment → init_site.sh knows it's in DevContainer
+  #
+  # No {{ app_name }} bind mount here! The init service uses the image's apps
+  # (with node_modules already built). The bind mount in the app service
+  # (devcontainer.json) is for live editing only.
   #
   # No depends_on here - init_site.sh uses wait-for-it to check DB/Redis
   # availability (works for both container and external services).
   # ---------------------------------------------------------------------------
   init:
     <<: *backend_defaults
-    volumes:
-      - sites:/home/{{ image_user }}/bench/sites
-      - apps:/home/{{ image_user }}/bench/apps
-      # Bind mount {{ app_name }} source so runtime scripts are always current
-      # (apps named volume may be stale after image rebuild)
-      # Note: relative paths resolve from project dir (ops/compose/), not this file
-      - ../../:/home/{{ image_user }}/bench/apps/{{ app_name }}:delegated
-      - type: bind
-        source: "${VSCODE_SETTINGS_PATH}"
-        target: "/home/{{ image_user }}/.vscode-host"
+    user: "0"  # Root needed to fix volume ownership for HOST_UID != 1000
+    # No {{ app_name }} bind mount here! Init uses the image's apps (with node_modules).
     environment:
       DEV_CONTAINER: "1"
 

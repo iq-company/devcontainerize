@@ -41,7 +41,7 @@
 	},
 	"workspaceFolder": "/home/{{ image_user }}/bench",
 	"initializeCommand": "bash -c \"${localWorkspaceFolder}/ops/scripts/devcontainer/init_env_files {{ default_dbms }}\"",
-	"postStartCommand": "bash -c \"install_iq_keybindings.py && (bench start -p .devcontainer/honcho/Procfile &) && wait-for-it localhost:8000 && info_bench_start.sh\"",
+	"postStartCommand": "bash apps/{{ app_name }}/ops/scripts/devcontainer/post_start.sh",
 	"shutdownAction": "stopCompose", // stop containers on vscode window close
 	"mounts": [
 		"source=${localEnv:HOME}${localEnv:USERPROFILE}/.ssh,target=/home/{{ image_user }}/.ssh,type=bind,consistency=delegated",

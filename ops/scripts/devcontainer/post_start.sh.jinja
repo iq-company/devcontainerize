@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+# =============================================================================
+# DevContainer postStartCommand
+# =============================================================================
+# Called by devcontainer.json after the container starts.
+# Handles: keybindings, node_modules sync, asset build, bench start.
+# =============================================================================
+
+set -e
+
+APP_NAME="{{ app_name }}"
+BENCH_DIR="/home/${IMAGE_USER:-{{ image_user }}}/bench"
+
+cd "$BENCH_DIR"
+
+# --- VSCode keybindings ---
+install_iq_keybindings.py 2>/dev/null || true
+
+# --- Ensure node_modules for bind-mounted app ---
+# The bind mount from the host overlays the image's app directory,
+# so node_modules (in .gitignore) is not present. Install once.
+if [ ! -d "apps/${APP_NAME}/node_modules" ]; then
+    echo "Installing node_modules for ${APP_NAME} (bind-mount has no node_modules)..."
+    cd "apps/${APP_NAME}"
+    yarn --check-files
+    cd "$BENCH_DIR"
+fi
+
+# --- Rebuild assets if they're stale ---
+# The sites volume may have old assets.json from a previous image build.
+# bench build ensures the hashes match the current source.
+echo "Building assets..."
+bench build
+
+# --- Start bench ---
+(bench start -p .devcontainer/honcho/Procfile &)
+wait-for-it localhost:8000
+info_bench_start.sh
