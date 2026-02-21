@@ -50,6 +50,12 @@ COPY --chown={{ defaults.image_user }}:{{ defaults.image_group }} . /opt/apps/{{
 COPY --chmod=0755 ops/build/resources/docker-patches.sh /home/${IMAGE_USER}/docker-patches.sh
 COPY --chmod=0755 ops/build/resources/dev-cleaner*.sh /home/${IMAGE_USER}/
 
+# Runtime scripts: copy to /usr/local/bin/ as volume-safe fallback.
+# The primary PATH entry points into the apps volume, which is masked when an
+# EXISTING named volume is mounted (Docker only populates volumes on first create).
+# /usr/local/bin/ is always on PATH and never masked, so init_site.sh etc. are always found.
+COPY --chmod=0755 ops/scripts/runtime/ /usr/local/bin/
+
 # --- Setup bench and apps (single layer: install bench CLI → setup → cleanup) ---
 # pip install frappe-bench + pip uninstall in same layer → no wasted space
 RUN set -ex; \

@@ -60,7 +60,11 @@ services:
   init:
     <<: *backend_defaults
     user: "0"  # Root needed to fix volume ownership for HOST_UID != 1000
-    # No {{ app_name }} bind mount here! Init uses the image's apps (with node_modules).
+    entrypoint:
+      - bash
+      - -c
+      # Prepend /usr/local/bin so image scripts take precedence over stale volume copies
+      - "export PATH=/usr/local/bin:$$PATH; exec init_site.sh"
     environment:
       DEV_CONTAINER: "1"
 
