@@ -125,6 +125,12 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # jq 'del(.scripts.postinstall)' "$FRAPPE_TARGET_DIR/package.json" > \
 #     "$FRAPPE_TARGET_DIR/package.tmp.json" && \
 #     mv "$FRAPPE_TARGET_DIR/package.tmp.json" "$FRAPPE_TARGET_DIR/package.json"
+#
+#
+# Bump esbuild target from es2017 to es2020 to suppress import.meta warnings
+# from dependencies like zustand that use import.meta.env in their ESM builds.
+# ES2020 is supported by all modern browsers (Chrome 80+, Firefox 74+, Safari 14+).
+sed -i 's/target: \[.*\],/target: ["es2020"],/' "$FRAPPE_TARGET_DIR/esbuild/esbuild.js"
 
 # =============================================================================
 # 5. CVE Fixes (npm resolutions)
