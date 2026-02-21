@@ -36,14 +36,16 @@ if [ "$(id -u)" = "0" ]; then
     fi
 
     # Always re-exec as app user (never run bench as root)
-    # Note: no -p flag, so su resets HOME to /home/{{ image_user }} (not /root)
-    exec su -s /bin/bash "${IMAGE_USER}" -c "$(realpath "$0")"
+    # Pass PATH through su (su resets env, losing Dockerfile's ENV PATH)
+    exec su -s /bin/bash "${IMAGE_USER}" -c "export PATH='${PATH}'; $(realpath "$0")"
 fi
 
-DB_SCHEMA=${DB_SCHEMA:-iq_schema}
-
+IMAGE_USER="${IMAGE_USER:-{{ image_user }}}"
 BENCH_DIR="/home/${IMAGE_USER}/bench"
-APPS_DIR="/home/${IMAGE_USER}/bench/apps"
+source "${BENCH_DIR}/env/bin/activate"
+
+DB_SCHEMA=${DB_SCHEMA:-iq_schema}
+APPS_DIR="${BENCH_DIR}/apps"
 
 echo "Using DBMS: $DBMS"
 

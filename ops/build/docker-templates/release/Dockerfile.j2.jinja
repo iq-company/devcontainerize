@@ -62,9 +62,9 @@ RUN rm -f /home/${IMAGE_USER}/bench/env/bin/python* && \
     ln -s "$(which python3)" /home/${IMAGE_USER}/bench/env/bin/python && \
     /home/${IMAGE_USER}/bench/env/bin/python -m pip install --no-cache-dir frappe-bench
 
-# Copy and run final cleanup script (must run AFTER pip install frappe-bench)
-COPY --chmod=755 ops/build/resources/release-final.sh /tmp/
-RUN IMAGE_USER=${IMAGE_USER} /tmp/release-final.sh && rm /tmp/release-final.sh
+# Copy and run release cleaner 'system' mode (must run AFTER pip install frappe-bench)
+COPY --chmod=755 ops/build/resources/release-cleaner*.sh /tmp/
+RUN IMAGE_USER=${IMAGE_USER} /tmp/release-cleaner.sh system && rm /tmp/release-cleaner*.sh
 
 ENV PATH="/home/${IMAGE_USER}/bench/env/bin:${PATH}"
 

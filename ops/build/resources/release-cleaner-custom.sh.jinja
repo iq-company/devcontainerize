@@ -1,0 +1,55 @@
+#!/bin/sh
+# =============================================================================
+# Custom Release Image Cleaner (project-specific, not overwritten by copier)
+# =============================================================================
+# Called by release-cleaner.sh with the same MODE argument.
+# Add project-specific cleanup tasks here, e.g.:
+#   - Remove additional dev-only node_modules or pip packages
+#   - Remove disabled features, test fixtures, or delivery artifacts
+#
+# Modes:
+#   app    → runs in Cleaner stage (FROM dev, as root)
+#   system → runs in Final stage (FROM base, AFTER pip install frappe-bench)
+#
+# This file is listed in copier's _skip_if_exists — template updates
+# won't overwrite your customizations.
+# =============================================================================
+
+set -e
+
+MODE="${1:-app}"
+IMAGE_USER="${IMAGE_USER:-{{ image_user }}}"
+BENCH_PATH="/home/${IMAGE_USER}/bench"
+VENV_PIP="${BENCH_PATH}/env/bin/pip"
+
+# Example: Additional node_modules and venv cleanups
+# cleanup_app_custom() {
+#     # Project-specific node_modules
+#     rm -rf "${BENCH_PATH}/apps/{{ app_name }}/node_modules/jest"*
+#     rm -rf "${BENCH_PATH}/apps/{{ app_name }}/node_modules/ts-jest"
+#
+#     # Additional frappe node_modules (not needed by this project)
+#     rm -rf "${BENCH_PATH}/apps/frappe/node_modules/@nodelib"
+#     rm -rf "${BENCH_PATH}/apps/frappe/node_modules/html-janitor"
+#     rm -rf "${BENCH_PATH}/apps/frappe/node_modules/@sentry"
+#     rm -rf "${BENCH_PATH}/apps/frappe/node_modules/@sentry-internal"
+#
+#     # Dev-only venv packages
+#     $VENV_PIP uninstall -y jedi parso IPython 2>/dev/null || true
+#
+#     # Disabled features / delivery artifacts
+#     rm -rf "${BENCH_PATH}/apps/{{ app_name }}/.devcontainer"
+#     rm -rf "${BENCH_PATH}/apps/{{ app_name }}/delivery"
+# }
+
+# Example: Additional system-level cleanups
+# cleanup_system_custom() {
+#     # Remove leftover venv packages
+#     rm -rf "${BENCH_PATH}/env/lib/python*/site-packages/parso"*
+# }
+
+case "${MODE}" in
+    app)    ;; # cleanup_app_custom ;;
+    system) ;; # cleanup_system_custom ;;
+    all)    ;; # cleanup_app_custom; cleanup_system_custom ;;
+esac

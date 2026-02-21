@@ -7,6 +7,7 @@ A `copier`-based template for creating devcontainerized Frappe app projects with
 - [Quick Start](#quick-start)
 - [Features](#features)
 - [Architecture](#architecture)
+- [Image Cleaner Scripts](#image-cleaner-scripts)
 - [Project Structure](#project-structure)
 - [Configuration Options](#configuration-options)
 - [CLI Commands](#cli-commands)
@@ -123,6 +124,80 @@ Docker Build Pipeline
 
 ---
 
+## Image Cleaner Scripts
+
+Each build target (dev, release) has a **main cleaner** and an optional **custom cleaner**:
+
+```
+ops/build/resources/
+├── dev-cleaner.sh              # Template-managed (updated by copier)
+├── dev-cleaner-custom.sh       # Project-specific (NOT updated by copier)
+├── release-cleaner.sh          # Template-managed (updated by copier)
+└── release-cleaner-custom.sh   # Project-specific (NOT updated by copier)
+```
+
+### Modes
+
+Both cleaners support the same modes, called at different points during the Docker build:
+
+| Mode | When | Runs as | Purpose |
+|------|------|---------|---------|
+| `app` | Same layer as installation | App user (dev) / root (release) | Remove node_modules, venv packages, caches |
+| `system` | Same layer as installation | root | Remove system-level Python packages |
+
+### dev-cleaner.sh
+
+Called in `Dockerfile.dev` within the same `RUN` layer as `setup_bench_apps.py`:
+
+```dockerfile
+# As app user:
+bash /home/${IMAGE_USER}/dev-cleaner.sh app
+# As root:
+bash /home/${IMAGE_USER}/dev-cleaner.sh system
+```
+
+- **`app` mode**: Removes build caches (yarn, uv, pip, huggingface, /tmp)
+- **`system` mode**: Removes system-level Python packages that were only needed for `bench init` (frappe-bench, GitPython, honcho, etc.)
+
+### release-cleaner.sh
+
+Called in two stages of `Dockerfile.release`:
+
+1. **Cleaner stage** (FROM dev): Via `ops_release_cleanup` hook → `release-cleaner.sh` (default mode = `app`)
+2. **Final stage** (FROM base): Explicitly via `release-cleaner.sh system`
+
+- **`app` mode**: Removes .pyc files, frappe build tools (esbuild, cypress), build-only node_modules (@babel, typescript, sass, less), runs `yarn autoclean`, removes .git directories, removes build-only scripts from home
+- **`system` mode**: Patches `import git` in bench modules, removes GitPython/setuptools/pip from venv, cleans system Python
+
+### Custom Cleaners
+
+The custom cleaners are scaffolded on initial project creation and **never overwritten** by `copier update`. Add your project-specific cleanups here:
+
+```bash
+# dev-cleaner-custom.sh — example:
+cleanup_app_custom() {
+    "${BENCH_PATH}/env/bin/pip" uninstall -y jedi parso 2>/dev/null || true
+    rm -rf "${BENCH_PATH}/apps/frappe/cypress"
+}
+
+# release-cleaner-custom.sh — example:
+cleanup_app_custom() {
+    rm -rf "${BENCH_PATH}/apps/myapp/.devcontainer"
+    rm -rf "${BENCH_PATH}/apps/frappe/node_modules/@sentry"
+    $VENV_PIP uninstall -y jedi parso IPython 2>/dev/null || true
+}
+```
+
+The main cleaner automatically calls the custom cleaner if it exists:
+
+```
+dev-cleaner.sh app → cleanup_app() → run_custom() → dev-cleaner-custom.sh app
+```
+
+> **Note**: For build hook details (frappe-patches.sh, app-patches.sh, etc.), see [BUILD_HOOKS.md](ops/build/BUILD_HOOKS.md).
+
+---
+
 ## Project Structure
 
 ```
@@ -142,8 +217,10 @@ app/
 │   │   │   ├── Dockerfile.dev
 │   │   │   └── Dockerfile.release
 │   │   ├── resources/             # Files copied into images
-│   │   │   ├── release-cleaner.sh
-│   │   │   ├── release-final.sh
+│   │   │   ├── release-cleaner.sh         # Release image cleaner (app/system modes)
+│   │   │   ├── release-cleaner-custom.sh  # Project-specific release cleanups
+│   │   │   ├── dev-cleaner.sh             # Dev image cleaner (app/system modes)
+│   │   │   ├── dev-cleaner-custom.sh      # Project-specific dev cleanups
 │   │   │   ├── setup_bench_apps.py
 │   │   │   ├── nginx/
 │   │   │   └── gunicorn/

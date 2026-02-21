@@ -36,9 +36,15 @@ During `setup_bench_apps.py` execution, several hook points are available:
 │                  (only for Dockerfile.release*)                     │
 ├─────────────────────────────────────────────────────────────────────┤
 │                                                                     │
-│  8. ops_release_cleanup hooks (via call_root_iq_release_dist.py)    │
-│     └─ Delete unnecessary files, caches, dev dependencies           │
-│     └─ Runs as root to delete system files                          │
+│  CLEANER STAGE (FROM dev):                                          │
+│  8. ops_release_cleanup hooks (via call_root_*_release_dist.py)     │
+│     └─ release-cleaner.sh app   (build tools, node_modules, .git)   │
+│     └─ release-cleaner-custom.sh app  (project-specific)            │
+│                                                                     │
+│  FINAL STAGE (FROM base):                                           │
+│  9. pip install frappe-bench    (reinstall bench CLI)                │
+│  10. release-cleaner.sh system  (git imports, pip/setuptools)        │
+│      └─ release-cleaner-custom.sh system  (project-specific)        │
 │                                                                     │
 └─────────────────────────────────────────────────────────────────────┘
 ```
@@ -93,25 +99,66 @@ if [ "$ENABLE_TRANSFORMERS" != "true" ]; then
 fi
 ```
 
+## Image Cleaner Scripts
+
+Each target has a **main cleaner** (template-managed, updated by copier) and an optional **custom cleaner** (project-specific, never overwritten by copier):
+
+| Target | Main Cleaner | Custom Cleaner |
+|--------|-------------|----------------|
+| dev | `dev-cleaner.sh` | `dev-cleaner-custom.sh` |
+| release | `release-cleaner.sh` | `release-cleaner-custom.sh` |
+
+Both support two modes:
+
+| Mode | Purpose |
+|------|---------|
+| `app` | Remove build artifacts, dev node_modules, venv packages, caches |
+| `system` | Remove system-level Python packages, patch bench modules |
+
+The main cleaner handles **universal** cleanups (applies to every Frappe project).
+The custom cleaner handles **project-specific** cleanups (e.g., removing specific packages your project doesn't need).
+
+### Adding Project-Specific Cleanups
+
+Edit `release-cleaner-custom.sh` or `dev-cleaner-custom.sh`:
+
+```bash
+cleanup_app_custom() {
+    # Remove packages your project doesn't need
+    rm -rf "${BENCH_PATH}/apps/frappe/node_modules/@sentry"
+    $VENV_PIP uninstall -y jedi parso 2>/dev/null || true
+}
+
+case "${MODE}" in
+    app)    cleanup_app_custom ;;
+    system) ;;
+    all)    cleanup_app_custom ;;
+esac
+```
+
 ## Release Cleanup Hooks (ops_release_cleanup)
 
-For cleanup tasks that run during **release image builds**, use the `ops_release_cleanup` hook in your app's `ops_hooks.py`:
+The `ops_release_cleanup` hook in `ops_hooks.py` triggers the release cleaner during the **Cleaner stage**:
 
 ```python
 # In your app's ops_hooks.py
-
 ops_release_cleanup = [
-    # Run a bash command
-    {"bash": "find /home/iqa/bench -name '*.pyc' -delete"},
-
-    # Run a script (path relative to app directory)
+    # release-cleaner.sh runs in 'app' mode by default
+    # Project-specific cleanups are in release-cleaner-custom.sh (called automatically)
     {"script": "../ops/build/resources/release-cleaner.sh"},
+]
+```
 
-    # Run a Python function
-    {"function": "myapp.utils.cleanup.remove_dev_files"},
+The **system mode** is called separately in the Final stage of `Dockerfile.release`, after `pip install frappe-bench`.
 
-    # Only run during Docker build (not when called manually)
-    {"bash": "rm -rf /some/path", "context": "only_during_build"},
+Additional hook types are supported:
+
+```python
+ops_release_cleanup = [
+    {"script": "../ops/build/resources/release-cleaner.sh"},    # Run a script
+    {"bash": "rm -rf /some/path"},                               # Run a bash command
+    {"function": "myapp.utils.cleanup.remove_dev_files"},        # Run a Python function
+    {"bash": "...", "context": "only_during_build"},             # Only during Docker build
 ]
 ```
 
@@ -120,14 +167,15 @@ ops_release_cleanup = [
 | Context | Description |
 |---------|-------------|
 | (none) | Runs always (during build and when called manually) |
-| `only_during_build` | Only runs during Docker image build (when docker is not available in container) |
+| `only_during_build` | Only runs during Docker image build |
 
 ### How it works
 
-1. `Dockerfile.release` calls `call_root_iq_release_dist.py`
+1. `Dockerfile.release` Cleaner stage calls `call_root_*_release_dist.py`
 2. This script reads `ops_release_cleanup` hooks from all installed apps
-3. Hooks are executed in order (bash commands, scripts, or functions)
+3. Hooks are executed in order → `release-cleaner.sh app` → `release-cleaner-custom.sh app`
 4. Runs as **root** to allow deleting system files
+5. In the Final stage, `release-cleaner.sh system` runs after `pip install frappe-bench`
 
 ## Environment Variables for Conditional Builds
 
@@ -177,29 +225,43 @@ if [ "$ENABLE_ML" != "true" ]; then
 fi
 ```
 
-### Step 2: Add release cleanup hooks
+### Step 2: Add release cleanup in release-cleaner-custom.sh
 
-```python
-# ops_hooks.py
-ops_release_cleanup = [
-    # Remove Python cache
-    {"bash": "find /home/iqa/bench -name '*.pyc' -delete"},
-    {"bash": "find /home/iqa/bench -name '__pycache__' -type d -delete"},
+```bash
+# release-cleaner-custom.sh
+cleanup_app_custom() {
+    # Remove dev-only venv packages
+    $VENV_PIP uninstall -y jedi parso IPython 2>/dev/null || true
 
-    # Remove development files
-    {"bash": "rm -rf /home/iqa/bench/apps/*/tests"},
-    {"bash": "rm -rf /home/iqa/bench/apps/*/.git"},
+    # Remove heavy test frameworks
+    rm -rf "${BENCH_PATH}/apps/myapp/node_modules/jest"*
 
-    # Run release-cleaner script
-    {"script": "../ops/build/resources/release-cleaner.sh"},
-]
+    # Remove disabled features
+    rm -rf "${BENCH_PATH}/apps/myapp/delivery"
+}
+
+case "${MODE}" in
+    app)    cleanup_app_custom ;;
+    system) ;;
+    all)    cleanup_app_custom ;;
+esac
 ```
 
-### Step 3: Cleanup build caches in Dockerfile
+### Step 3: Dev image cleanup in dev-cleaner-custom.sh
 
-The template already includes cache cleanup in the same layer as `setup_bench_apps.py`:
+```bash
+# dev-cleaner-custom.sh
+cleanup_app_custom() {
+    # Remove packages not needed even during development
+    "${BENCH_PATH}/env/bin/pip" uninstall -y jedi parso 2>/dev/null || true
+    rm -rf "${BENCH_PATH}/apps/frappe/cypress"
+}
 
-```dockerfile
-RUN python3 setup_bench_apps.py ... ; \
-    rm -rf ~/.cache/yarn ~/.cache/uv ~/.cache/pip /tmp/*
+case "${MODE}" in
+    app)    cleanup_app_custom ;;
+    system) ;;
+    all)    cleanup_app_custom ;;
+esac
 ```
+
+> **Note**: Build caches (yarn, uv, pip) are automatically cleaned by the main `dev-cleaner.sh` and `release-cleaner.sh` — no need to add these to your custom cleaners.

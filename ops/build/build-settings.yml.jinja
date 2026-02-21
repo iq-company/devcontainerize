@@ -113,7 +113,7 @@ targets:
     hash_files:
       - ops/build/docker/Dockerfile.release
       - ops/build/resources/release-cleaner.sh
-      - ops/build/resources/release-final.sh
+      - ops/build/resources/release-cleaner-custom.sh
       - ops/build/resources/call_root_iq_release_dist.py
     image: {{ image_prefix }}-release
     # Note: Only VERSION determines rebuild check (first tag is used for existence check).

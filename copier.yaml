@@ -87,8 +87,8 @@ _skip_if_exists:
   - ".devcontainer/launch.json"
   - "ops/build/VERSION"
   - "ops/build/stages.yml"
-  - "ops/build/resources/release-cleaner.sh"
-  - "ops/build/resources/release-final.sh"
+  - "ops/build/resources/dev-cleaner-custom.sh"
+  - "ops/build/resources/release-cleaner-custom.sh"
   - "ops/build/resources/frappe-patches.sh"
   - "ops/env-templates/env.template"
   - "ops/build/docker-templates/recipes/99-custom.yml"  # User's custom recipes

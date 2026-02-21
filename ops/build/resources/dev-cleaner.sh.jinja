@@ -1,0 +1,111 @@
+#!/bin/bash
+# =============================================================================
+# Dev Image Cleaner (managed by devcontainerize template)
+# =============================================================================
+# Runs during dev image build to remove unnecessary files from the same layer.
+# Must run in the SAME RUN layer as the install to actually save space.
+#
+# Usage:
+#   dev-cleaner.sh app     → cleanup as app user (caches, then custom hook)
+#   dev-cleaner.sh system  → cleanup as root (system-level Python packages)
+#
+# Extensibility:
+#   Place project-specific cleanups in dev-cleaner-custom.sh (same directory).
+#   That file is listed in copier's _skip_if_exists and won't be overwritten
+#   on template updates. It receives the same MODE argument ($1 = app|system).
+# =============================================================================
+
+set -e
+
+MODE="${1:-all}"
+IMAGE_USER="${IMAGE_USER:-{{ image_user }}}"
+BENCH_PATH="/home/${IMAGE_USER}/bench"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+
+# -----------------------------------------------------------------------------
+# App-level cleanup (runs as app user)
+# -----------------------------------------------------------------------------
+cleanup_app() {
+    echo "  [dev-cleaner] Removing build caches..."
+    rm -rf "/home/${IMAGE_USER}/.cache/yarn" \
+           "/home/${IMAGE_USER}/.cache/uv" \
+           "/home/${IMAGE_USER}/.cache/pip" \
+           "/home/${IMAGE_USER}/.cache/huggingface" \
+           /tmp/*
+}
+
+# -----------------------------------------------------------------------------
+# System-level cleanup (runs as root)
+# Removes packages that were only needed for 'bench init' / image build.
+# -----------------------------------------------------------------------------
+cleanup_system() {
+    local SITE_PKG="/usr/local/lib/python*/site-packages"
+
+    echo "  [dev-cleaner] Removing system-level Python packages (only needed for bench init)..."
+
+    # MUST use absolute path — PATH has the bench venv before /usr/local/bin,
+    # so bare "pip" would uninstall from the venv instead of the system!
+    /usr/local/bin/pip uninstall -y frappe-bench GitPython gitdb smmap honcho semantic-version \
+        python-crontab requests certifi charset-normalizer idna urllib3 \
+        click Jinja2 MarkupSafe python-dateutil six uv 2>/dev/null || true
+
+    # Remove entry point scripts left behind by pip uninstall
+    echo "  [dev-cleaner] Removing stale entry points..."
+    rm -f /usr/local/bin/bench /usr/local/bin/honcho /usr/local/bin/uv
+
+    # Force-remove package directories that pip uninstall may have missed.
+    # Without this, half-removed packages cause import errors at runtime.
+    echo "  [dev-cleaner] Force-removing leftover package directories..."
+    rm -rf ${SITE_PKG}/bench \
+           ${SITE_PKG}/bench_manager \
+           ${SITE_PKG}/frappe_bench* \
+           ${SITE_PKG}/GitPython* \
+           ${SITE_PKG}/git \
+           ${SITE_PKG}/gitdb* \
+           ${SITE_PKG}/smmap* \
+           ${SITE_PKG}/honcho* \
+           ${SITE_PKG}/semantic_version* \
+           ${SITE_PKG}/crontab* \
+           ${SITE_PKG}/python_crontab* \
+           ${SITE_PKG}/requests* \
+           ${SITE_PKG}/certifi* \
+           ${SITE_PKG}/charset_normalizer* \
+           ${SITE_PKG}/idna* \
+           ${SITE_PKG}/urllib3* \
+           ${SITE_PKG}/click* \
+           ${SITE_PKG}/jinja2* \
+           ${SITE_PKG}/Jinja2* \
+           ${SITE_PKG}/markupsafe* \
+           ${SITE_PKG}/MarkupSafe* \
+           ${SITE_PKG}/dateutil* \
+           ${SITE_PKG}/python_dateutil* \
+           ${SITE_PKG}/six* \
+           ${SITE_PKG}/uv* \
+           ${SITE_PKG}/pkg_resources* \
+           ${SITE_PKG}/__pycache__ \
+           ${SITE_PKG}/*.dist-info \
+           /tmp/*
+}
+
+# -----------------------------------------------------------------------------
+# Run custom project-specific cleanups (if script exists)
+# -----------------------------------------------------------------------------
+run_custom() {
+    local CUSTOM_SCRIPT="${SCRIPT_DIR}/dev-cleaner-custom.sh"
+    if [ -f "${CUSTOM_SCRIPT}" ]; then
+        echo "  [dev-cleaner] Running custom cleanup (${MODE})..."
+        bash "${CUSTOM_SCRIPT}" "${MODE}"
+    fi
+}
+
+# -----------------------------------------------------------------------------
+# Main
+# -----------------------------------------------------------------------------
+case "${MODE}" in
+    app)    cleanup_app;    run_custom ;;
+    system) cleanup_system; run_custom ;;
+    all)    cleanup_app; cleanup_system; run_custom ;;
+    *)      echo "Usage: dev-cleaner.sh [app|system|all]"; exit 1 ;;
+esac
+
+echo "  [dev-cleaner] Done (${MODE})."

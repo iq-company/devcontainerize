@@ -1,0 +1,36 @@
+#!/bin/bash
+# =============================================================================
+# Custom Dev Image Cleaner (project-specific, not overwritten by copier update)
+# =============================================================================
+# Called by dev-cleaner.sh with the same MODE argument.
+# Add project-specific cleanup tasks here, e.g.:
+#   - Remove unused pip packages from the bench venv
+#   - Remove unneeded frappe/app node_modules
+#   - Remove test frameworks, docs, or other dev-only artifacts
+#
+# This file is listed in copier's _skip_if_exists — template updates
+# won't overwrite your customizations.
+# =============================================================================
+
+set -e
+
+MODE="${1:-all}"
+IMAGE_USER="${IMAGE_USER:-{{ image_user }}}"
+BENCH_PATH="/home/${IMAGE_USER}/bench"
+
+# Example: Remove unused venv packages and dev-only directories
+# cleanup_app_custom() {
+#     "${BENCH_PATH}/env/bin/pip" uninstall -y jedi parso 2>/dev/null || true
+#     rm -rf "${BENCH_PATH}/apps/frappe/cypress"
+# }
+
+# Example: Remove additional system packages
+# cleanup_system_custom() {
+#     rm -f /usr/local/bin/some-tool
+# }
+
+case "${MODE}" in
+    app)    ;; # cleanup_app_custom ;;
+    system) ;; # cleanup_system_custom ;;
+    all)    ;; # cleanup_app_custom; cleanup_system_custom ;;
+esac

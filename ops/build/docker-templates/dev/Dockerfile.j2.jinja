@@ -42,28 +42,29 @@ ARG FRAPPE_PATH=https://github.com/frappe/frappe
 
 USER root
 
-# --- Install build dependencies (single layer for size optimization) ---
+# --- Install OS build dependencies (cached layer, only changes on base image update) ---
 RUN set -ex; \
-    {{ recipe_raw("install_frappe_deps") }} && \
-    pip install frappe-bench
-
-USER ${IMAGE_USER}
+    {{ recipe_raw("install_frappe_deps") }}
 
 COPY --chown={{ defaults.image_user }}:{{ defaults.image_group }} . /opt/apps/{{ defaults.app_name }}
-
-# --- Setup bench and apps (single layer with cleanup) ---
-RUN set -ex; \
-    {{ recipe_raw("setup_bench_apps") }}; \
-    {{ recipe_raw("cleanup_frappe") }}
-
-##
-
-WORKDIR /home/${IMAGE_USER}/bench
-USER root
-
 COPY --chmod=0755 ops/build/resources/docker-patches.sh /home/${IMAGE_USER}/docker-patches.sh
+COPY --chmod=0755 ops/build/resources/dev-cleaner*.sh /home/${IMAGE_USER}/
 
-{{ recipe("run_docker_patches") }}
+# --- Setup bench and apps (single layer: install bench CLI → setup → cleanup) ---
+# pip install frappe-bench + pip uninstall in same layer → no wasted space
+RUN set -ex; \
+    pip install --no-cache-dir frappe-bench; \
+    # Run bench setup as app user (su resets HOME correctly)
+    su -s /bin/bash ${IMAGE_USER} -c "\
+        set -ex; \
+        {{ recipe_raw("setup_bench_apps") }}; \
+        /home/${IMAGE_USER}/bench/env/bin/pip install --no-cache-dir frappe-bench; \
+        {{ recipe_raw("cleanup_frappe") }}"; \
+    # Docker patches (branding, etc.) - runs as root
+    {{ recipe_raw("run_docker_patches") }}; \
+    # Clean up system-level Python packages (frappe-bench only needed for bench init)
+    # Same layer as install → actually saves ~33MB
+    {{ recipe_raw("cleanup_system_python") }}
 
 USER ${IMAGE_USER}
 

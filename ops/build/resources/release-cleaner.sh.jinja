@@ -1,37 +1,135 @@
-#!/usr/bin/bash
+#!/bin/sh
 # =============================================================================
-# Release Cleaner (Template Script)
+# Release Image Cleaner (managed by devcontainerize template)
 # =============================================================================
-# Runs in CLEANER stage of Dockerfile.release (FROM dev image)
-# Called via ops_release_cleanup hooks → call_root_iq_release_dist.py
+# Runs during release image build in two stages:
 #
-# This script handles file/directory cleanups only.
-# pip-related cleanups are in release-final.sh (runs AFTER pip install).
+#   release-cleaner.sh app    → Cleaner stage (FROM dev): remove build artifacts,
+#                                dev-only node_modules/pip, yarn autoclean
+#   release-cleaner.sh system → Final stage (FROM base):  remove git imports,
+#                                gitpython, pip/setuptools from venv and system
+#
+# The 'app' mode is triggered via ops_release_cleanup hooks (call_root_*_release_dist.py).
+# The 'system' mode is called explicitly in Dockerfile.release AFTER pip install.
+#
+# Extensibility:
+#   Place project-specific cleanups in release-cleaner-custom.sh (same directory).
+#   That file is listed in copier's _skip_if_exists and won't be overwritten
+#   on template updates. It receives the same MODE argument ($1 = app|system).
 # =============================================================================
 
 set -e
 
-rm -rf apps/iq_core/.devcontainer
+MODE="${1:-app}"
+IMAGE_USER="${IMAGE_USER:-{{ image_user }}}"
+BENCH_PATH="/home/${IMAGE_USER}/bench"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+VENV_PIP="${BENCH_PATH}/env/bin/pip"
 
-# Clean up unnecessary node_modules (CVE reduction)
-cd /home/{{ image_user }}/bench/apps/frappe &&
-	rm -rf esbuild &&
-	rm -rf node_modules/@babel &&
-	rm -rf node_modules/@nodelib &&
-	rm -rf node_modules/typescript &&
-	rm -rf node_modules/html-janitor &&
-	rm -rf node_modules/micromatch &&
-	rm -rf node_modules/fast-glob &&
-	rm -rf node_modules/loadjs &&
-	rm -rf node_modules/esbuild-linux-64 &&
-	rm -rf node_modules/esbuild* &&
-	# reduce unneeded files in node_modules by yarn
-	yarn autoclean --init && yarn autoclean --force
+# -----------------------------------------------------------------------------
+# App-level cleanup (runs in Cleaner stage as root, FROM dev image)
+# Removes build-only tools, dev node_modules, caches, .git dirs
+# -----------------------------------------------------------------------------
+cleanup_app() {
+    echo "  [release-cleaner] Removing .pyc files..."
+    find "${BENCH_PATH}" -name '*.pyc' -delete 2>/dev/null || true
 
-# Remove .git and other dev directories from apps
-# (skip if LOCAL_DEV_ENV=true, where local git will be mounted)
-if [ "$LOCAL_DEV_ENV" != "true" ]; then
-	/usr/bin/find /home/{{ image_user }}/bench/apps -type d \( -name ".cache" -o -name ".config" -o -name ".yarn" -o -name ".git" \) -exec rm -rf {} + 2>/dev/null || true
-	/usr/bin/find /home/{{ image_user }}/bench/apps -mindepth 1 -path "*/.git" -exec rm -rf {} + 2>/dev/null || true
-	/usr/bin/find /home/{{ image_user }}/bench/apps -mindepth 1 -path "*/.github" -exec rm -rf {} + 2>/dev/null || true
-fi
+    # --- Frappe build tools (not needed at runtime) ---
+    echo "  [release-cleaner] Removing frappe build tools..."
+    rm -rf "${BENCH_PATH}/apps/frappe/esbuild" \
+           "${BENCH_PATH}/apps/frappe/cypress"
+
+    # --- Frappe node_modules: build-only packages ---
+    echo "  [release-cleaner] Removing build-only frappe node_modules..."
+    rm -rf "${BENCH_PATH}/apps/frappe/node_modules/esbuild"* \
+           "${BENCH_PATH}/apps/frappe/node_modules/@babel" \
+           "${BENCH_PATH}/apps/frappe/node_modules/@types" \
+           "${BENCH_PATH}/apps/frappe/node_modules/typescript" \
+           "${BENCH_PATH}/apps/frappe/node_modules/sass" \
+           "${BENCH_PATH}/apps/frappe/node_modules/less"
+
+    # --- yarn autoclean for all apps ---
+    echo "  [release-cleaner] Running yarn autoclean..."
+    for app_dir in "${BENCH_PATH}"/apps/*/; do
+        if [ -f "${app_dir}package.json" ]; then
+            (cd "${app_dir}" && yarn autoclean --init && yarn autoclean --force) 2>/dev/null || true
+        fi
+    done
+
+    # --- Remove .git and dev directories from all apps ---
+    echo "  [release-cleaner] Removing .git and dev directories..."
+    find "${BENCH_PATH}/apps" -type d \( \
+        -name ".git" -o -name ".github" -o -name ".cache" -o \
+        -name ".config" -o -name ".yarn" \
+    \) -exec rm -rf {} + 2>/dev/null || true
+
+    # --- Remove build-only scripts copied to home dir during dev image build ---
+    echo "  [release-cleaner] Removing build-only scripts from home..."
+    rm -f /home/${IMAGE_USER}/*cleaner*.sh \
+          /home/${IMAGE_USER}/*patches*.sh
+
+    # --- Remove build caches ---
+    echo "  [release-cleaner] Removing build caches..."
+    rm -rf "/home/${IMAGE_USER}/.cache" /tmp/*
+}
+
+# -----------------------------------------------------------------------------
+# System-level cleanup (runs in Final stage as root, FROM base image)
+# Must run AFTER pip install frappe-bench in the final stage.
+# -----------------------------------------------------------------------------
+cleanup_system() {
+    PYTHON_VENV_VERSION=$(ls "${BENCH_PATH}/env/lib/" | grep -E '^python[0-9]+\.[0-9]+' | head -1)
+    SITE_PACKAGES="${BENCH_PATH}/env/lib/${PYTHON_VENV_VERSION}/site-packages"
+
+    # Remove 'import git' from bench modules (git not installed in release image)
+    echo "  [release-cleaner] Patching bench modules (removing git imports)..."
+    sed -i 's/import git//' "${SITE_PACKAGES}/bench/utils/app.py" 2>/dev/null || true
+    sed -i 's/import git//' "${SITE_PACKAGES}/bench/app.py" 2>/dev/null || true
+
+    # Remove gitpython entirely (git binary not available, causes shell errors on import)
+    echo "  [release-cleaner] Removing gitpython from venv..."
+    "${BENCH_PATH}/env/bin/python" -m pip uninstall -y GitPython gitdb smmap 2>/dev/null || true
+
+    # Remove setuptools from venv (not needed at runtime, ~5.5MB)
+    echo "  [release-cleaner] Removing setuptools from venv..."
+    "${BENCH_PATH}/env/bin/python" -m pip uninstall -y setuptools 2>/dev/null || true
+
+    # Remove pip from venv (CVE reduction, not needed at runtime, ~11MB)
+    echo "  [release-cleaner] Removing pip from venv..."
+    "${BENCH_PATH}/env/bin/python" -m pip uninstall -y pip 2>/dev/null || true
+
+    # Remove leftover test directories
+    echo "  [release-cleaner] Removing test directories..."
+    rm -rf "${SITE_PACKAGES}/h11/tests/" 2>/dev/null || true
+
+    # Remove pip/setuptools from system Python as well
+    echo "  [release-cleaner] Removing system pip/setuptools..."
+    rm -rf /usr/local/lib/python*/site-packages/pip* \
+           /usr/local/lib/python*/site-packages/setuptools* \
+           /usr/local/lib/python*/site-packages/pkg_resources \
+           /usr/local/lib/python*/site-packages/__pycache__ \
+           /usr/local/lib/python*/site-packages/*.dist-info 2>/dev/null || true
+}
+
+# -----------------------------------------------------------------------------
+# Run custom project-specific cleanups (if script exists)
+# -----------------------------------------------------------------------------
+run_custom() {
+    local CUSTOM_SCRIPT="${SCRIPT_DIR}/release-cleaner-custom.sh"
+    if [ -f "${CUSTOM_SCRIPT}" ]; then
+        echo "  [release-cleaner] Running custom cleanup (${MODE})..."
+        sh "${CUSTOM_SCRIPT}" "${MODE}"
+    fi
+}
+
+# -----------------------------------------------------------------------------
+# Main
+# -----------------------------------------------------------------------------
+case "${MODE}" in
+    app)    cleanup_app;    run_custom ;;
+    system) cleanup_system; run_custom ;;
+    all)    cleanup_app; cleanup_system; run_custom ;;
+    *)      echo "Usage: release-cleaner.sh [app|system|all]"; exit 1 ;;
+esac
+
+echo "  [release-cleaner] Done (${MODE})."

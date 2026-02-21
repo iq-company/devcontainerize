@@ -21,13 +21,9 @@ ops_tests = [
 #   {"bash": "...", "stages": ["staging", "prod"]}  # Only for staging and prod
 #   {"bash": "..."}                                  # For all stages
 ops_release_cleanup = [
-    # {"function": "{{app_name}}.utils.release_cleanup.remove_dev_dependencies"},
-    {"bash": "find /home/{{image_user}}/bench -name '*.pyc' -delete"},
+    # release-cleaner.sh runs in 'app' mode by default (pyc cleanup, node_modules, etc.)
+    # Project-specific cleanups are in release-cleaner-custom.sh (called automatically)
     {"script": "../ops/build/resources/release-cleaner.sh"},
-    {"bash": "rm -rf /home/{{image_user}}/bench/apps/{{app_name}}/ops", "context": "only_during_build"},
-    # Stage-specific cleanup examples:
-    # {"bash": "echo 'Staging-only cleanup'", "stages": ["staging"]},
-    # {"bash": "echo 'Prod-only cleanup'", "stages": ["prod"]},
 ]
 
 

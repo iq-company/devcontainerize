@@ -110,28 +110,26 @@ recipes:
   # --- Docker patches (branding, etc.) ---
   run_docker_patches:
     debian: |
-      set -x; \
       bash /home/${IMAGE_USER}/docker-patches.sh; \
       chown -R ${IMAGE_USER}:${IMAGE_GROUP} /home/${IMAGE_USER}/bench/sites/; \
       chmod -R g+rw /home/${IMAGE_USER}/bench/sites/; \
       chmod -R g+rw /home/${IMAGE_USER}/bench/config; \
       chmod -R g+rw /etc/nginx/
     alpine: |
-      # Nginx dirs are already set up in base image
-      set -x; \
       bash /home/${IMAGE_USER}/docker-patches.sh; \
       chown -R ${IMAGE_USER}:${IMAGE_GROUP} /home/${IMAGE_USER}/bench/sites/; \
       chmod -R g+rw /home/${IMAGE_USER}/bench/sites/; \
       chmod -R g+rw /home/${IMAGE_USER}/bench/config
 
-  # --- Frappe cache cleanup ---
+  # --- Clean up system-level Python packages (must be in same layer as pip install) ---
+  cleanup_system_python:
+    _default: |
+      bash /home/${IMAGE_USER}/dev-cleaner.sh system
+
+  # --- Dev cleanup (delegates to dev-cleaner.sh for maintainability) ---
   cleanup_frappe:
     _default: |
-      rm -rf /home/{{ image_user }}/.cache/yarn \
-          /home/{{ image_user }}/.cache/uv \
-          /home/{{ image_user }}/.cache/pip \
-          /home/{{ image_user }}/.cache/huggingface \
-          /tmp/*
+      bash /home/${IMAGE_USER}/dev-cleaner.sh app
 
   # --- Copy compiled DBMS client from builder (only for postgres) ---
   # Note: This is a COPY instruction, not a shell command

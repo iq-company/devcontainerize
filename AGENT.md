@@ -173,6 +173,45 @@ Key hook files:
 - `{app_name}-patches.sh` - Before `pip install` (reduce dependencies!)
 - `ops_release_cleanup` (in ops_hooks.py) - Release image cleanup
 
+## Image Cleaner Scripts
+
+Each target has a **main cleaner** (template-managed) + optional **custom cleaner** (project-specific):
+
+```
+ops/build/resources/
+├── dev-cleaner.sh              # Updated by copier - universal cleanups
+├── dev-cleaner-custom.sh       # In _skip_if_exists - project-specific
+├── release-cleaner.sh          # Updated by copier - universal cleanups
+└── release-cleaner-custom.sh   # In _skip_if_exists - project-specific
+```
+
+**Pattern**: Both cleaners support `app` and `system` modes.
+The main cleaner auto-calls the custom cleaner if it exists.
+
+```
+Dockerfile.dev:
+  RUN ... ; dev-cleaner.sh app   (as app user, same layer as install)
+  ...   ; dev-cleaner.sh system  (as root, same layer)
+
+Dockerfile.release:
+  Cleaner Stage:  ops_hooks → release-cleaner.sh [app]
+  Final Stage:    release-cleaner.sh system  (after pip install frappe-bench)
+```
+
+**What goes where:**
+
+| Main Cleaner (template) | Custom Cleaner (project) |
+|--------------------------|--------------------------|
+| Build caches (yarn/uv/pip) | Unused venv packages (jedi, IPython) |
+| System Python packages | App-specific node_modules (jest, grapesjs) |
+| Frappe build tools (esbuild) | Project artifacts (delivery/, .devcontainer) |
+| .git directories, .pyc | Frappe modules not used by project (@sentry) |
+| git import patches (release) | Dev-only frameworks |
+| pip/setuptools removal (release) | |
+
+**Important**: Custom cleaners are listed in `copier.yaml:_skip_if_exists`,
+so `copier update` never overwrites project customizations.
+
 ## Non-Obvious Patterns
 
 ### 1. copier-answers.yml Location
@@ -186,6 +225,8 @@ Files listed in `copier.yaml:_skip_if_exists` are only created on initial copy,
 never overwritten on update. Important for user customizations:
 - `ops/build/stages.yml`
 - `ops/build/docker-templates/recipes/99-custom.yml`
+- `ops/build/resources/dev-cleaner-custom.sh`
+- `ops/build/resources/release-cleaner-custom.sh`
 - `pyproject.toml`
 
 ### 3. Docker Compose Path Resolution
