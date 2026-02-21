@@ -85,6 +85,8 @@ _skip_if_exists:
   - "{{ app_name }}/commands/__init__.py"
   - "{{ app_name }}/ops_hooks.py"
   - ".devcontainer/launch.json"
+  - ".vscode/tasks.json"
+  - ".vscode/settings.json"
   - "ops/build/VERSION"
   - "ops/build/stages.yml"
   - "ops/build/resources/dev-cleaner-custom.sh"

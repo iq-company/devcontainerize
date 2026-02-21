@@ -1,0 +1,28 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Remove Containers",
+			"type": "shell",
+			"command": "source ops/compose/.env && docker ps -a --filter \"label=com.docker.compose.project=${COMPOSE_PROJECT_NAME}\" --format \"{{ '{{' }}.ID{{ '}}' }}\" | xargs docker rm -f"
+		},
+		{
+			"label": "Remove Volumes",
+			"type": "shell",
+			"command": "source ops/compose/.env && docker volume ls --filter \"label=com.docker.compose.project=${COMPOSE_PROJECT_NAME}\" --format \"{{ '{{' }}.Name{{ '}}' }}\" | xargs docker volume rm"
+		},
+		{
+			"label": "Remove Containers and Volumes",
+			"type": "shell",
+			"command": "source ops/compose/.env && docker ps -a --filter \"label=com.docker.compose.project=${COMPOSE_PROJECT_NAME}\" --format \"{{ '{{' }}.ID{{ '}}' }}\" | xargs docker rm -f && docker volume ls --filter \"label=com.docker.compose.project=${COMPOSE_PROJECT_NAME}\" --format \"{{ '{{' }}.Name{{ '}}' }}\" | xargs docker volume rm"
+		},
+		{
+			"label": "Update Core App from Image into Volume",
+			"type": "shell",
+			"command": "bash",
+			"args": [
+				"ops/scripts/devcontainer/update-core-apps-from-image-into-volume.sh"
+			]
+		}
+	]
+}
