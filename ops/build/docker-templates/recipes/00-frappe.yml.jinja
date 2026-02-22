@@ -159,7 +159,6 @@ recipes:
       find /home/${IMAGE_USER}/bench/sites_assets/ -type d -print0 | xargs -0 -r chmod 775 ; \
       find /home/${IMAGE_USER}/bench/sites_assets/ -type f -print0 | xargs -0 -r chmod 644
     alpine: |
-      # Nginx dirs are already created in base image
       chmod 775 /home/${IMAGE_USER}/bench/logs; \
       chmod -R 664 /home/${IMAGE_USER}/bench/logs/* 2>/dev/null || true; \
       find /home/${IMAGE_USER}/bench/sites_assets/ -type d -print0 | xargs -0 -r chmod 775 ; \

@@ -2,12 +2,15 @@ import os
 import os.path
 
 bind = "0.0.0.0:8000"
-workers = 2
-threads = 4
+workers = int(os.environ.get("GUNICORN_WORKERS", 2))
+threads = int(os.environ.get("GUNICORN_THREADS", 4))
 worker_class = "gthread"
-timeout = 120
+timeout = int(os.environ.get("GUNICORN_TIMEOUT", 120))
+graceful_timeout = int(os.environ.get("GUNICORN_GRACEFUL_TIMEOUT", 120))
 preload_app = True
-worker_tmp_dir = "/dev/shm"
+
+# Heartbeat temp dir — /dev/shm is ideal (RAM-based, fast).
+worker_tmp_dir = os.environ.get("GUNICORN_WORKER_TMP_DIR", "/dev/shm")
 
 CERT_DIR = "/srv/cert"
 certfile = None
