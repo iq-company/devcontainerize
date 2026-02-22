@@ -6,6 +6,9 @@
 env/.env
 env/.env.*
 
+# Deployment state files (written by bench ops stage run, used for rollback)
+env/.stage-state.*.json
+
 # Copy of shared .env for Docker Compose variable interpolation
 # (copied from env/.env by init_env_files)
 compose/.env

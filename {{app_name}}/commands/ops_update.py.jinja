@@ -56,6 +56,10 @@ class UpdateContext:
     stage_env_file: Path = None
     env_file_name: str = ".env.dev"
 
+    # Rollback state: profiles/env from the PREVIOUS running stack.
+    # If the update fails, rollback uses these instead of the (possibly changed) current env.
+    rollback_profiles: list = field(default_factory=list)
+
     # Error tracking
     errors: list = field(default_factory=list)
 
@@ -523,7 +527,11 @@ class CleanupRollbackImagesStep(UpdateStep):
 # =============================================================================
 
 class RollbackStep(UpdateStep):
-    """Rollback to previously tagged images."""
+    """Rollback to previously tagged images and profiles.
+
+    Uses the saved rollback state (profiles, image tag) from BEFORE the update
+    so that services that didn't exist in the old stack won't be started.
+    """
 
     name = "rollback"
     description = "Rollback to previous images"
@@ -537,16 +545,27 @@ class RollbackStep(UpdateStep):
 
         self.log("Rolling back to previous images...")
 
-        # Stop current containers
-        stop_cmd = self.ctx.base_cmd + ["down"]
-        subprocess.run(stop_cmd, cwd=self.ctx.compose_dir, env=self.ctx.env, capture_output=True)
-
-        # Update env with rollback tag
+        # Build rollback env from the PREVIOUS state, not the (possibly changed) current env
         rollback_env = self.ctx.env.copy()
         rollback_env["IQ_IMAGE_TAG"] = self.ctx.rollback_tag
 
-        # Start with rollback images
-        up_cmd = self.ctx.base_cmd + ["up", "-d"]
+        # Restore previous profiles so services that didn't exist before (e.g. ocr-rt)
+        # are not included in the rollback. Without this, a failed new service build
+        # would also crash the rollback.
+        if self.ctx.rollback_profiles:
+            old_profiles = ",".join(self.ctx.rollback_profiles)
+            rollback_env["COMPOSE_PROFILES"] = old_profiles
+            self.log(f"  Using previous profiles: {old_profiles}")
+        else:
+            self.log("  No previous profile state — using current profiles", "warning")
+
+        # Stop current containers
+        stop_cmd = self.ctx.base_cmd + ["down"]
+        subprocess.run(stop_cmd, cwd=self.ctx.compose_dir, env=rollback_env, capture_output=True)
+
+        # Start with rollback images (--no-build: never try to build during rollback,
+        # services with build: context would fail if the Dockerfile is broken)
+        up_cmd = self.ctx.base_cmd + ["up", "-d", "--no-build"]
         result = subprocess.run(up_cmd, cwd=self.ctx.compose_dir, env=rollback_env)
 
         if result.returncode == 0:
@@ -671,11 +690,18 @@ class UpdateOrchestrator:
         self.ctx = ctx
         self.executed_steps: list[UpdateStep] = []
 
-    def run_full_update(self) -> bool:
-        """Run the complete update sequence with all hooks."""
+    def run_full_update(self, save_state_callback: Optional[Callable] = None) -> bool:
+        """Run the complete update sequence with all hooks.
+
+        Args:
+            save_state_callback: Optional callback(env) called after successful update
+                to persist the new deployment state (profiles, image tag, etc.).
+        """
         click.echo(f"\n🔄 Starting controlled update for '{self.ctx.stage_name}'...")
         click.echo(f"   Image: {self.ctx.image_name}")
         click.echo(f"   Rollback tag: {self.ctx.rollback_tag}")
+        if self.ctx.rollback_profiles:
+            click.echo(f"   Rollback profiles: {', '.join(self.ctx.rollback_profiles)}")
         click.echo("")
 
         # Pre-update hooks
@@ -727,6 +753,13 @@ class UpdateOrchestrator:
         # Post-update hooks
         if not HookRunner.run_hooks("post_update", self.ctx):
             click.echo("⚠️  Post-update hooks failed (update completed)", err=True)
+
+        # Save the new deployment state so the NEXT rollback knows what to restore
+        if save_state_callback:
+            try:
+                save_state_callback(self.ctx.env)
+            except Exception as e:
+                click.echo(f"⚠️  Could not save deployment state: {e}")
 
         click.echo(f"\n🎉 Stage '{self.ctx.stage_name}' updated successfully!")
         return True
@@ -799,6 +832,7 @@ def create_update_context(
     image_name: str,
     has_registry: bool,
     was_running: bool,
+    rollback_profiles: list | None = None,
 ) -> UpdateContext:
     """Create an UpdateContext with all required data."""
     from datetime import datetime
@@ -819,4 +853,5 @@ def create_update_context(
         shared_env_file=env_dir / ".env",
         stage_env_file=env_dir / env_file_name,
         env_file_name=env_file_name,
+        rollback_profiles=rollback_profiles or [],
     )
