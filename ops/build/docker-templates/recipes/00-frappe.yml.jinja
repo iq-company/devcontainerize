@@ -95,17 +95,20 @@ recipes:
           python3-dev linux-headers libffi-dev
 
   # --- Setup bench apps ---
+  # NOTE: Use single quotes for variables here! This recipe is inserted inside
+  # a su -c "..." double-quoted block. Inner double quotes would break the
+  # outer quoting, causing empty variables to lose their argument value.
   setup_bench_apps:
     _default: |
       python3 /opt/apps/{{ app_name }}/ops/build/resources/setup_bench_apps.py \
-          --frappe-ref "${FRAPPE_REF}" \
-          --frappe-path "${FRAPPE_PATH}" \
-          --custom-apps "${CUSTOM_APPS}" \
+          --frappe-ref '${FRAPPE_REF}' \
+          --frappe-path '${FRAPPE_PATH}' \
+          --custom-apps '${CUSTOM_APPS}' \
           --local-app-path /opt/apps/{{ app_name }} \
           --home-dir /home/{{ image_user }} \
-          --github-user "${GITHUB_USER}" \
-          --github-token "${GITHUB_TOKEN}" \
-          $([ "${PRODUCTION_BUILD}" = "true" ] && echo "--production")
+          --github-user '${GITHUB_USER}' \
+          --github-token '${GITHUB_TOKEN}' \
+          $([ '${PRODUCTION_BUILD}' = 'true' ] && echo '--production')
 
   # --- Docker patches (branding, etc.) ---
   run_docker_patches:
