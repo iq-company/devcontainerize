@@ -43,6 +43,8 @@ ARG GID=1000
 
 ENV LD_LIBRARY_PATH="/home/${IMAGE_USER}/bench/sites/extensions/lib"
 
+USER root
+
 # --- Create user and install base packages ---
 {% if base_variant == "alpine" %}
 RUN set -ex; \
