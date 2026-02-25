@@ -268,6 +268,12 @@ def main():
             print(f"Building assets for: {build_apps}")
             run_command(build_cmd, cwd=str(bench_dir))
 
+        # Deduplicate identical node_modules across apps (symlink duplicates)
+        dedup_script = bench_dir / "apps" / local_app_name / "ops" / "build" / "resources" / "dedup_node_modules.py"
+        if dedup_script.exists():
+            print("Deduplicating node_modules across apps...")
+            run_command([sys.executable, str(dedup_script), str(bench_dir / "apps")])
+
         # Handle assets directory (move and symlink for volume mounting)
         sites_assets_dir = bench_dir / "sites_assets"
         assets_dir = bench_dir / "sites" / "assets"
