@@ -85,6 +85,12 @@ cleanup_system() {
            ${SITE_PKG}/__pycache__ \
            ${SITE_PKG}/*.dist-info \
            /tmp/*
+
+    # Trivy SBOM dedup: remove vendored dist-info nested inside packages
+    # that remain after the cleanup above (e.g. setuptools/_vendor/*.dist-info).
+    # Trivy reads these as separate packages, creating phantom SBOM duplicates.
+    echo "  [dev-cleaner] Removing vendored dist-info from remaining system packages..."
+    find ${SITE_PKG} -mindepth 2 -name "*.dist-info" -type d -exec rm -rf {} + 2>/dev/null || true
 }
 
 # -----------------------------------------------------------------------------

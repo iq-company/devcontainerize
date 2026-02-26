@@ -259,6 +259,15 @@ def main():
         print("Installing Node requirements...")
         run_command(["bench", "setup", "requirements", "--node"], cwd=str(bench_dir))
 
+        # Flatten nested node_modules (npm dedupe per app)
+        print("Running npm dedupe for each app...")
+        apps_dir = bench_dir / "apps"
+        for app_dir in sorted(apps_dir.iterdir()):
+            nm_dir = app_dir / "node_modules"
+            if nm_dir.is_dir() and (app_dir / "package.json").is_file():
+                print(f"  npm dedupe: {app_dir.name}")
+                run_command(["npm", "dedupe", "--no-audit", "--no-fund"], cwd=str(app_dir))
+
         # Build assets
         if not args.skip_assets:
             build_apps = ",".join(installed_apps)
@@ -286,6 +295,55 @@ def main():
         python_version = f"python{sys.version_info.major}.{sys.version_info.minor}"
         extension_path = bench_dir / "env" / "lib" / python_version / "site-packages" / "extension_paths.pth"
         extension_path.write_text(f"{bench_dir}/sites/extensions/pip_packages\n")
+
+        # Trivy SBOM dedup: remove artefacts that cause phantom duplicates.
+        # NOTE: This only cleans the bench venv (runs as iqa user).
+        #       System Python (/usr/local/lib) is cleaned by dev-cleaner.sh
+        #       which runs as root in a later step of the same RUN layer.
+        site_packages = bench_dir / "env" / "lib" / python_version / "site-packages"
+        if site_packages.is_dir():
+            # 1. Remove vendored *.dist-info (bleach/_vendor, setuptools/_vendor, …)
+            #    Trivy reads these as separate packages even though they are
+            #    internal vendored copies.  Not needed at runtime.
+            vendored_distinfos = [
+                p for p in site_packages.rglob("*.dist-info")
+                if p.is_dir() and p.parent != site_packages
+            ]
+            if vendored_distinfos:
+                print(f"Removing {len(vendored_distinfos)} vendored dist-info dirs (Trivy SBOM cleanup)...")
+                for di in vendored_distinfos:
+                    print(f"  {di.relative_to(site_packages)}")
+                    shutil.rmtree(di)
+
+            # 2. Remove auditwheel CycloneDX SBOMs (sboms/ inside dist-info)
+            #    Wheels built with auditwheel embed a sboms/auditwheel.cdx.json
+            #    that lists the package again as a CycloneDX component.
+            sbom_dirs = list(site_packages.glob("*.dist-info/sboms"))
+            if sbom_dirs:
+                print(f"Removing {len(sbom_dirs)} auditwheel SBOM dirs (Trivy SBOM cleanup)...")
+                for sd in sbom_dirs:
+                    print(f"  {sd.relative_to(site_packages)}")
+                    shutil.rmtree(sd)
+
+            # 3. Remove test fixtures that contain fake packages
+            #    (e.g. pkg_resources/tests/data/my-test-package_*.egg)
+            #    Trivy reads PKG-INFO/EGG-INFO inside these as real packages.
+            for test_dir_name in ["tests", "test"]:
+                for test_dir in list(site_packages.rglob(test_dir_name)):
+                    if not test_dir.is_dir() or test_dir.is_symlink():
+                        continue
+                    if not test_dir.exists():
+                        continue
+                    has_fixtures = any(
+                        test_dir.rglob("PKG-INFO")
+                    ) or any(
+                        test_dir.rglob("EGG-INFO")
+                    ) or any(
+                        test_dir.rglob("*.egg")
+                    )
+                    if has_fixtures:
+                        print(f"Removing test fixture dir: {test_dir.relative_to(site_packages)}")
+                        shutil.rmtree(test_dir)
 
         # Clean up unnecessary files
         for pattern in [".git", ".github", ".cache", ".config", ".yarn"]:
