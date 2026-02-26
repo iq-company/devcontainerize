@@ -72,6 +72,11 @@ site_name:
   default: "{{ app_name }}.local"
   help: "Default domain name used by the devcontainer site"
 
+keep_languages:
+  type: str
+  default: "de en-GB en-US"
+  help: "Space-separated language codes to keep (EN is always available as source language)"
+
 _tasks:
   - "python3 \"{{ _copier_conf.src_path }}/ops/copier/patch_commands_init_py.py\" {{ app_name }} \"{{ _copier_conf.src_path }}\""
   - "python3 \"{{ _copier_conf.src_path }}/ops/copier/patch_hooks_py.py\" {{ app_name }}"

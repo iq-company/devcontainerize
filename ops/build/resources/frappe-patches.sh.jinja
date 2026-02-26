@@ -69,7 +69,56 @@ echo "Patching Frappe at: $FRAPPE_TARGET_DIR"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # =============================================================================
-# 1. Remove Unused Python Dependencies
+# 1. Remove Unused Translations (before bench build compiles them)
+# =============================================================================
+# Frappe ships ~40 MB of translations (CSV + gettext PO) for 70+ languages.
+# Keep only the languages needed for this project to save image size and
+# speed up "Compiling translations..." during bench build.
+# English is the source language (no en.csv/en.po) — always available.
+
+KEEP_LANGS="{{ keep_languages }}"   # space-separated, configured in copier.yaml
+
+echo "Removing unused translations (keeping: $KEEP_LANGS) ..."
+
+# --- CSV translations (frappe/translations/*.csv) ---
+TRANSLATIONS_DIR="$FRAPPE_TARGET_DIR/frappe/translations"
+if [ -d "$TRANSLATIONS_DIR" ]; then
+    for csv_file in "$TRANSLATIONS_DIR"/*.csv; do
+        [ -f "$csv_file" ] || continue
+        lang_code="$(basename "$csv_file" .csv)"
+        keep=false
+        for k in $KEEP_LANGS; do
+            [ "$lang_code" = "$k" ] && keep=true && break
+        done
+        if [ "$keep" = false ]; then
+            rm -f "$csv_file"
+        fi
+    done
+    remaining=$(ls "$TRANSLATIONS_DIR"/*.csv 2>/dev/null | wc -l)
+    echo "  CSV translations: kept $remaining files"
+fi
+
+# --- Gettext PO/POT (frappe/locale/*.po) ---
+LOCALE_DIR="$FRAPPE_TARGET_DIR/frappe/locale"
+if [ -d "$LOCALE_DIR" ]; then
+    for po_file in "$LOCALE_DIR"/*.po; do
+        [ -f "$po_file" ] || continue
+        lang_code="$(basename "$po_file" .po)"
+        keep=false
+        for k in $KEEP_LANGS; do
+            [ "$lang_code" = "$k" ] && keep=true && break
+        done
+        if [ "$keep" = false ]; then
+            rm -f "$po_file"
+        fi
+    done
+    # Keep main.pot (template) — it's needed by compile_translations
+    remaining=$(ls "$LOCALE_DIR"/*.po 2>/dev/null | wc -l)
+    echo "  PO translations: kept $remaining files (+ main.pot)"
+fi
+
+# =============================================================================
+# 2. Remove Unused Python Dependencies
 # =============================================================================
 # Uncomment and customize the libraries you want to remove:
 #
@@ -95,7 +144,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # done
 
 # =============================================================================
-# 2. Patch Removed Dependencies (prevent import errors)
+# 3. Patch Removed Dependencies (prevent import errors)
 # =============================================================================
 # When removing dependencies, you may need to patch import statements
 # to prevent errors when Frappe tries to load the modules.
