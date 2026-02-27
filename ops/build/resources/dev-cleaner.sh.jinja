@@ -26,12 +26,23 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # App-level cleanup (runs as app user)
 # -----------------------------------------------------------------------------
 cleanup_app() {
+    local VENV_PKG="${BENCH_PATH}/env/lib/python*/site-packages"
+
     echo "  [dev-cleaner] Removing build caches..."
     rm -rf "/home/${IMAGE_USER}/.cache/yarn" \
            "/home/${IMAGE_USER}/.cache/uv" \
            "/home/${IMAGE_USER}/.cache/pip" \
            "/home/${IMAGE_USER}/.cache/huggingface" \
            /tmp/*
+
+    # Remove uv from bench venv.
+    # frappe-bench declares uv~=0.9 as a hard dependency, so every
+    # 'pip install frappe-bench' re-installs it.  This runs AFTER the
+    # last pip install to make sure it stays gone.
+    # BENCH_DISABLE_UV=1 (set in Dockerfile ENV) ensures bench uses pip.
+    echo "  [dev-cleaner] Removing uv from bench venv (~54 MB)..."
+    rm -f "${BENCH_PATH}/env/bin/uv" "${BENCH_PATH}/env/bin/uvx"
+    rm -rf ${VENV_PKG}/uv ${VENV_PKG}/uv-*.dist-info
 }
 
 # -----------------------------------------------------------------------------
@@ -91,6 +102,12 @@ cleanup_system() {
     # Trivy reads these as separate packages, creating phantom SBOM duplicates.
     echo "  [dev-cleaner] Removing vendored dist-info from remaining system packages..."
     find ${SITE_PKG} -mindepth 2 -name "*.dist-info" -type d -exec rm -rf {} + 2>/dev/null || true
+
+    # Remove bundled pip .whl from ensurepip (Nexus IQ / Trivy scan these)
+    # pip is already installed; ensurepip is not needed at runtime.
+    echo "  [dev-cleaner] Removing ensurepip bundled wheels..."
+    rm -rf /usr/lib/python*/ensurepip/_bundled/*.whl \
+           /usr/local/lib/python*/ensurepip/_bundled/*.whl 2>/dev/null || true
 }
 
 # -----------------------------------------------------------------------------

@@ -94,6 +94,12 @@ cleanup_system() {
     echo "  [release-cleaner] Removing setuptools from venv..."
     "${BENCH_PATH}/env/bin/python" -m pip uninstall -y setuptools 2>/dev/null || true
 
+    # Remove uv from venv (BENCH_DISABLE_UV=1 prevents usage; ~54 MB + CVEs)
+    # frappe-bench declares uv~=0.9 as hard dependency, so pip install re-adds it.
+    echo "  [release-cleaner] Removing uv from venv..."
+    rm -f "${BENCH_PATH}/env/bin/uv" "${BENCH_PATH}/env/bin/uvx"
+    rm -rf "${SITE_PACKAGES}"/uv "${SITE_PACKAGES}"/uv-*.dist-info
+
     # Remove pip from venv (CVE reduction, not needed at runtime, ~11MB)
     echo "  [release-cleaner] Removing pip from venv..."
     "${BENCH_PATH}/env/bin/python" -m pip uninstall -y pip 2>/dev/null || true
@@ -107,8 +113,13 @@ cleanup_system() {
     rm -rf /usr/local/lib/python*/site-packages/pip* \
            /usr/local/lib/python*/site-packages/setuptools* \
            /usr/local/lib/python*/site-packages/pkg_resources \
+           /usr/local/lib/python*/site-packages/uv* \
            /usr/local/lib/python*/site-packages/__pycache__ \
            /usr/local/lib/python*/site-packages/*.dist-info 2>/dev/null || true
+
+    # Remove bundled pip .whl from ensurepip (Nexus IQ / Trivy scan these)
+    rm -rf /usr/lib/python*/ensurepip/_bundled/*.whl \
+           /usr/local/lib/python*/ensurepip/_bundled/*.whl 2>/dev/null || true
 }
 
 # -----------------------------------------------------------------------------

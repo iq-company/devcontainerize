@@ -34,6 +34,10 @@ ARG PRODUCTION_BUILD=false
 ARG FRAPPE_REF={{ defaults.frappe_ref | default(defaults.frappe_branch, true) | default('version-15', true) }}
 ARG FRAPPE_PATH=https://github.com/frappe/frappe
 
+# Disable uv (Rust-based package manager) — saves ~54 MB and avoids CVEs.
+# frappe-bench falls back to standard pip when this is set.
+ENV BENCH_DISABLE_UV=1
+
 # --- Copy compiled binaries from builder (variant-specific) ---
 {% if base_variant == "debian" %}
 {{ recipe_raw("copy_from_builder_dbms") }}

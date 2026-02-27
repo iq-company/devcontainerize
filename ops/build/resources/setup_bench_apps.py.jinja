@@ -283,6 +283,21 @@ def main():
             print("Deduplicating node_modules across apps...")
             run_command([sys.executable, str(dedup_script), str(bench_dir / "apps")])
 
+        # Remove esbuild Go binary after build (only needed at build time).
+        # This is a statically-linked Go executable (~10 MB) that carries
+        # embedded CVEs from the Go stdlib. In the dev image, yarn install
+        # will reinstall it when the devcontainer starts.
+        apps_dir = bench_dir / "apps"
+        for esbuild_bin in apps_dir.rglob("esbuild-linux-*/bin/esbuild"):
+            if esbuild_bin.is_file() and not esbuild_bin.is_symlink():
+                print(f"Removing esbuild binary: {esbuild_bin.relative_to(bench_dir)}")
+                esbuild_bin.unlink()
+        # Also remove @esbuild platform-specific binaries (esbuild >= 0.15 layout)
+        for esbuild_bin in apps_dir.rglob("@esbuild/*/bin/esbuild"):
+            if esbuild_bin.is_file() and not esbuild_bin.is_symlink():
+                print(f"Removing esbuild binary: {esbuild_bin.relative_to(bench_dir)}")
+                esbuild_bin.unlink()
+
         # Handle assets directory (move and symlink for volume mounting)
         sites_assets_dir = bench_dir / "sites_assets"
         assets_dir = bench_dir / "sites" / "assets"
@@ -295,6 +310,11 @@ def main():
         python_version = f"python{sys.version_info.major}.{sys.version_info.minor}"
         extension_path = bench_dir / "env" / "lib" / python_version / "site-packages" / "extension_paths.pth"
         extension_path.write_text(f"{bench_dir}/sites/extensions/pip_packages\n")
+
+        # NOTE: uv removal from bench venv is handled by dev-cleaner.sh (cleanup_app)
+        # which runs AFTER the last 'pip install frappe-bench' in the Dockerfile.
+        # frappe-bench declares uv~=0.9 as a hard pip dependency, so any earlier
+        # removal here would be undone by the subsequent pip install.
 
         # Trivy SBOM dedup: remove artefacts that cause phantom duplicates.
         # NOTE: This only cleans the bench venv (runs as iqa user).
