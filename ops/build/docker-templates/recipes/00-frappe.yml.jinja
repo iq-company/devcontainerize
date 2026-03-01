@@ -92,7 +92,8 @@ recipes:
       apk add --no-cache \
           git jq vim gcc musl-dev bzip2-dev cmake libtool m4 automake \
           make wget readline-dev zlib-dev openssl-dev \
-          python3-dev linux-headers libffi-dev
+          python3-dev linux-headers libffi-dev; \
+      apk add --no-cache --repository http://dl-cdn.alpinelinux.org/alpine/edge/testing hurl
 
   # --- Setup bench apps ---
   # NOTE: Use single quotes for variables here! This recipe is inserted inside
