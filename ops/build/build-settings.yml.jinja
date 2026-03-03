@@ -35,14 +35,12 @@ dockerfile_settings:
 # Note: Project-specific values (app_name, image_user, etc.) are automatically
 #       loaded from .copier-answers.yml
 dockerfile_defaults:
-  # Version defaults for Debian variant
+  # Global version defaults (variant-specific values like alpine_version
+  # and debian_base live in base/variants/*.yml)
   python_version: "3.12"
-  debian_base: "bookworm"
   node_version: "20"
   pg_version: "16.4"
   nginx_version: "1.27.4"
-  # Uncomment for Alpine variant:
-  # alpine_version: "3.20"
 
 # Target definitions
 # Available tag functions:
