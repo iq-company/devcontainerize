@@ -25,7 +25,7 @@ recipes:
       apk add --no-cache \
           wget gettext file \
           mesa-gl glib \
-          bash jq coreutils curl \
+          bash jq coreutils curl gzip \
           {% if default_dbms == 'postgres' %}postgresql-client libpq{% elif default_dbms == 'mariadb' %}mariadb-client mariadb-connector-c{% else %}sqlite{% endif %} \
           nginx nginx-mod-http-lua lua-resty-core; \
       # Remove Alpine's default nginx config (listens on port 80, conflicts with our config)
