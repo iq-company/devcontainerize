@@ -36,7 +36,7 @@ ARG FRAPPE_PATH=https://github.com/frappe/frappe
 
 # Disable uv (Rust-based package manager) — saves ~54 MB and avoids CVEs.
 # frappe-bench falls back to standard pip when this is set.
-ENV BENCH_DISABLE_UV=1
+# ENV BENCH_DISABLE_UV=1 # not stable yet
 
 # --- Copy compiled binaries from builder (variant-specific) ---
 {% if base_variant == "debian" %}

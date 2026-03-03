@@ -56,7 +56,7 @@ COPY --from=cleaner --chown=${IMAGE_USER}:${IMAGE_GROUP} /opt/pcre2/* /opt/pcre2
 {% endif %}
 
 # Disable uv (Rust-based package manager) — saves ~54 MB and avoids CVEs.
-ENV BENCH_DISABLE_UV=1
+# ENV BENCH_DISABLE_UV=1 # not stable yet
 
 # Fix venv symlinks to use this image's Python (DEV image may have different paths)
 # Then reinstall bench CLI to fix shebangs in entry point scripts
