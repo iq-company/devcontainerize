@@ -38,14 +38,20 @@ remove_import() {
     sed -i "/$pattern/d" "$file"
 }
 
-# Add or update a resolution in package.json (for CVE fixes)
+# Add or update a resolution in apps' package.json files (for CVE fixes)
 # Usage: add_npm_resolution "package-name" "version"
 add_npm_resolution() {
     local package="$1"
     local version="$2"
-    jq ".resolutions = (.resolutions // {}) + {\"$package\": \"$version\"}" \
-        "$FRAPPE_TARGET_DIR/package.json" > tmp.$$.json && \
-        mv tmp.$$.json "$FRAPPE_TARGET_DIR/package.json"
+    local apps_dir
+
+    apps_dir="$(dirname "$FRAPPE_TARGET_DIR")"
+
+    for pj in "$apps_dir"/*/package.json; do
+        [ -f "$pj" ] || continue
+        jq ".resolutions = (.resolutions // {}) + {\"$package\": \"$version\"}" \
+            "$pj" > tmp.$$.json && mv tmp.$$.json "$pj"
+    done
 }
 
 # =============================================================================
@@ -118,7 +124,15 @@ if [ -d "$LOCALE_DIR" ]; then
 fi
 
 # =============================================================================
-# 2. Remove Unused Python Dependencies
+# 2. Upgrade Python Dependencies with CVEs
+# =============================================================================
+echo "Upgrading Python dependencies with known CVEs..."
+
+# markdown2 2.4.x → 2.5.x (CVE: XSS and ReDoS fixes)
+sed -i 's/markdown2~=2\.4\.[0-9]*/markdown2~=2.5.0/' "$FRAPPE_TARGET_DIR/pyproject.toml"
+
+# =============================================================================
+# 3. Remove Unused Python Dependencies
 # =============================================================================
 # Uncomment and customize the libraries you want to remove:
 #
@@ -144,7 +158,7 @@ fi
 # done
 
 # =============================================================================
-# 3. Patch Removed Dependencies (prevent import errors)
+# 4. Patch Removed Dependencies (prevent import errors)
 # =============================================================================
 # When removing dependencies, you may need to patch import statements
 # to prevent errors when Frappe tries to load the modules.
@@ -165,8 +179,27 @@ fi
 # remove_import "capture_exception" "$FRAPPE_TARGET_DIR/frappe/utils/error.py"
 
 # =============================================================================
-# 4. JavaScript/Node Patches
+# 5. Stub download_frappe_assets (broken on Alpine ash, not needed)
 # =============================================================================
+# Frappe's build.py tries to download pre-built assets from GitHub releases.
+# We always build assets from our sources -> Stub the function to always return False (= "build from source").
+echo "Stubbing download_frappe_assets..."
+sed -i '/^def download_frappe_assets/,/^def [a-z]/ {
+    /^def download_frappe_assets/!{
+        /^def [a-z]/!d
+    }
+}' "$FRAPPE_TARGET_DIR/frappe/build.py"
+# Now insert the stub body
+sed -i '/^def download_frappe_assets/a\    """Stubbed: always build from source (patched by frappe-patches.sh)."""\n    return False' \
+    "$FRAPPE_TARGET_DIR/frappe/build.py"
+
+# =============================================================================
+# 6. JavaScript/Node Patches
+# =============================================================================
+
+# Rewrite "github:user/repo" → "git+https://github.com/user/repo.git" (no SSH client in container)
+sed -i 's|"github:\([^"]*\)"|"git+https://github.com/\1.git"|g' "$FRAPPE_TARGET_DIR/package.json"
+
 # Example - Remove a dependency from package.json:
 # sed -i '/@vue\/component-compiler/d' "$FRAPPE_TARGET_DIR/package.json"
 #
@@ -181,12 +214,57 @@ fi
 # ES2020 is supported by all modern browsers (Chrome 80+, Firefox 74+, Safari 14+).
 sed -i 's/target: \[.*\],/target: ["es2020"],/' "$FRAPPE_TARGET_DIR/esbuild/esbuild.js"
 
+# --- CVE: Upgrade socket.io 4.7.x → 4.8.x ---
+# socket.io 4.7.2 → engine.io 6.5.x → ws ~8.11.0 (CVE: DoS via ws)
+# socket.io 4.8.x → engine.io 6.6.x → ws ~8.17.1+ (fixed)
+# This is a minor/patch bump; the socket.io 4.x API is stable.
+echo "  Upgrading socket.io and socket.io-client to 4.8.x..."
+jq '.dependencies["socket.io"] = "^4.8.3"
+   | .dependencies["socket.io-client"] = "^4.8.1"' \
+    "$FRAPPE_TARGET_DIR/package.json" > tmp.$$.json && \
+    mv tmp.$$.json "$FRAPPE_TARGET_DIR/package.json"
+
+# --- CVE: Upgrade superagent 8.x → 10.x ---
+# superagent 8.x → formidable 2.1.2 (CVE: arbitrary file upload)
+# superagent 10.x → formidable 3.5.x (fixed) + qs ^6.14.1 (fixed)
+# superagent API (.get, .set, .query) is stable across major versions.
+# Used in frappe/realtime for HTTP auth callbacks.
+echo "  Upgrading superagent to 10.x..."
+jq '.dependencies["superagent"] = "^10.0.0"' \
+    "$FRAPPE_TARGET_DIR/package.json" > tmp.$$.json && \
+    mv tmp.$$.json "$FRAPPE_TARGET_DIR/package.json"
+
 # =============================================================================
-# 5. CVE Fixes (npm resolutions)
+# 7. CVE Fixes (npm resolutions)
 # =============================================================================
+echo "Applying CVE fixes (npm resolutions)..."
+
 # Use add_npm_resolution to pin vulnerable packages to fixed versions:
-#
 # add_npm_resolution "@adobe/css-tools" "4.3.3"
 # add_npm_resolution "postcss" "8.4.47"
+
+# ws: force latest 8.x across all consumers (socket.io, engine.io, etc.)
+add_npm_resolution "ws" "8.18.3"
+# qs: fix prototype pollution CVEs in older 6.x versions
+add_npm_resolution "qs" "6.14.2"
+# markdown-it: patch release fixing CVE in 14.1.0
+add_npm_resolution "markdown-it" "14.1.1"
+# minimatch: upgrade from 3.1.2 to latest 3.x (API-compatible with glob 7.x)
+add_npm_resolution "minimatch" "3.1.5"
+
+# Remove stale yarn.lock entries for packages we've version-bumped.
+# Each yarn.lock entry starts with "pkg@range:" and ends at the next blank line.
+echo "Removing stale yarn.lock entries for bumped packages..."
+if [ -f "$FRAPPE_TARGET_DIR/yarn.lock" ]; then
+    for entry in \
+        '^ws@' \
+        '^engine\.io@' \
+        '^socket\.io@[^-]' \
+        '^socket\.io-client@' \
+        '^superagent@' \
+    ; do
+        sed -i "/${entry}/,/^$/d" "$FRAPPE_TARGET_DIR/yarn.lock"
+    done
+fi
 
 echo "Frappe patches applied."

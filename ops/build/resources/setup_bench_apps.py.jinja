@@ -256,17 +256,24 @@ def main():
         print("Installing Python requirements...")
         run_command(["bench", "setup", "requirements", "--python"], cwd=str(bench_dir))
 
+        # Propagate yarn resolutions from frappe to all other apps.
+        frappe_pkg = bench_dir / "apps" / "frappe" / "package.json"
+        if frappe_pkg.exists():
+            frappe_data = json.loads(frappe_pkg.read_text())
+            resolutions = frappe_data.get("resolutions", {})
+            if resolutions:
+                print(f"Propagating {len(resolutions)} npm resolutions to all apps...")
+                for app_dir in sorted((bench_dir / "apps").iterdir()):
+                    pkg_json = app_dir / "package.json"
+                    if app_dir.name == "frappe" or not pkg_json.exists():
+                        continue
+                    data = json.loads(pkg_json.read_text())
+                    data["resolutions"] = {**data.get("resolutions", {}), **resolutions}
+                    pkg_json.write_text(json.dumps(data, indent=2) + "\n")
+                    print(f"  → {app_dir.name}")
+
         print("Installing Node requirements...")
         run_command(["bench", "setup", "requirements", "--node"], cwd=str(bench_dir))
-
-        # Flatten nested node_modules (npm dedupe per app)
-        print("Running npm dedupe for each app...")
-        apps_dir = bench_dir / "apps"
-        for app_dir in sorted(apps_dir.iterdir()):
-            nm_dir = app_dir / "node_modules"
-            if nm_dir.is_dir() and (app_dir / "package.json").is_file():
-                print(f"  npm dedupe: {app_dir.name}")
-                run_command(["npm", "dedupe", "--no-audit", "--no-fund"], cwd=str(app_dir))
 
         # Build assets
         if not args.skip_assets:

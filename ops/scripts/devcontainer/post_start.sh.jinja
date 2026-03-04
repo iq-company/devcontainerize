@@ -16,15 +16,36 @@ cd "$BENCH_DIR"
 # --- VSCode keybindings ---
 install_iq_keybindings.py 2>/dev/null || true
 
-# --- Ensure node_modules for bind-mounted app ---
-# The bind mount from the host overlays the image's app directory,
-# so node_modules (in .gitignore) is not present. Install once.
-if [ ! -d "apps/${APP_NAME}/node_modules" ]; then
-    echo "Installing node_modules for ${APP_NAME} (bind-mount has no node_modules)..."
-    cd "apps/${APP_NAME}"
-    yarn --check-files
-    cd "$BENCH_DIR"
+# --- Fix GitHub SSH dependencies (no SSH client in container) ---
+# Rewrite github: → git+https in package.json & yarn.lock to prevent ssh requirement.
+for pj in apps/*/package.json; do
+    if grep -q '"github:' "$pj" 2>/dev/null; then
+        sed -i 's|"github:\([^"]*\)"|"git+https://github.com/\1.git"|g' "$pj"
+        echo "  Rewrote github: → git+https in $pj"
+    fi
+done
+
+for lf in apps/*/yarn.lock; do
+    if grep -q 'git+ssh://git@github.com' "$lf" 2>/dev/null; then
+        sed -i 's|git+ssh://git@github.com|git+https://github.com|g' "$lf"
+        echo "  Rewrote git+ssh → git+https in $lf"
+    fi
+done
+
+# --- Restore node_modules for all apps ---
+INITIALIZED_MARKER="$BENCH_DIR/.devcontainer-initialized"
+
+if [ ! -f "$INITIALIZED_MARKER" ]; then
+    # First start after image build: node_modules are in a dedup'd/stripped state
+    # (build-only packages removed, symlinks for dedup).  Yarn's integrity metadata
+    # is out of sync.  Delete and let yarn reinstall cleanly.
+    echo "First start – clearing dedup'd node_modules..."
+    rm -rf apps/*/node_modules
+    touch "$INITIALIZED_MARKER"
 fi
+
+echo "Installing node dependencies..."
+bench setup requirements --node
 
 # --- Rebuild assets if they're stale ---
 # The sites volume may have old assets.json from a previous image build.
