@@ -18,13 +18,11 @@ recipes:
     debian: |
       apt-get update && apt-get install --no-install-recommends -y \
           wget gettext-base file \
-          libgl1-mesa-glx libglib2.0-0 \
           {% if default_dbms == 'postgres' %}postgresql-client libpq5{% elif default_dbms == 'mariadb' %}mariadb-client libmariadb3{% else %}sqlite3{% endif %} \
           wait-for-it jq nginx
     alpine: |
       apk add --no-cache \
           wget gettext file \
-          mesa-gl glib \
           bash jq coreutils curl gzip \
           {% if default_dbms == 'postgres' %}postgresql-client libpq{% elif default_dbms == 'mariadb' %}mariadb-client mariadb-connector-c{% else %}sqlite{% endif %} \
           nginx nginx-mod-http-lua lua-resty-core; \

@@ -232,8 +232,27 @@ if [[ $IQ_SITE_NAME == test_* ]]; then
 	bench --site $IQ_SITE_NAME set-config allow_tests true
 fi
 
-# When started from devcontainers (DEV_CONTAINER=1), several further adjustments for vscode will be made
+# When started from devcontainers (DEV_CONTAINER=1), install dev-only dependencies
 if [ -n "$DEV_CONTAINER" ]; then
-	# Placeholder for any future devcontainer-specific logic
-	echo "Devcontainer-specific setup can be added here."
+	echo "Installing dev dependencies from pyproject.toml [dev] extras..."
+	# Read optional dev deps from pyproject.toml and install them into the bench venv.
+	# This keeps the image lean (production-only) while providing tools like baker-cli
+	# for development workflows (bench ops dockerfile, bench ops build, etc.).
+	python3 -c "
+import tomllib, subprocess, sys
+from pathlib import Path
+apps_dir = Path('${BENCH_DIR}/apps')
+for app_dir in sorted(apps_dir.iterdir()):
+    pyproject = app_dir / 'pyproject.toml'
+    if not pyproject.exists():
+        continue
+    with open(pyproject, 'rb') as f:
+        data = tomllib.load(f)
+    dev_deps = data.get('project', {}).get('optional-dependencies', {}).get('dev', [])
+    if dev_deps:
+        print(f'  {app_dir.name}: {dev_deps}')
+        subprocess.check_call([
+            '${BENCH_DIR}/env/bin/pip', 'install', '--no-cache-dir', *dev_deps
+        ])
+"
 fi

@@ -119,7 +119,7 @@ def main():
     parser.add_argument("--skip-assets", action="store_true",
                         help="Skip building frontend assets")
     parser.add_argument("--production", action="store_true", default=True,
-                        help="Build assets for production")
+                        help="Build assets for production (minified)")
     args = parser.parse_args()
 
     netrc_path = setup_github_credentials(args.github_user, args.github_token)
