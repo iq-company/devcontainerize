@@ -131,6 +131,9 @@ echo "Upgrading Python dependencies with known CVEs..."
 # markdown2 2.4.x → 2.5.x (CVE: XSS and ReDoS fixes)
 sed -i 's/markdown2~=2\.4\.[0-9]*/markdown2~=2.5.0/' "$FRAPPE_TARGET_DIR/pyproject.toml"
 
+# pypdf 3.x → 6.7.x (CVE fixes in 3.x)
+sed -i 's/pypdf~=3\.[0-9]*\.[0-9]*/pypdf~=6.7/' "$FRAPPE_TARGET_DIR/pyproject.toml"
+
 # =============================================================================
 # 3. Remove Unused Python Dependencies
 # =============================================================================
@@ -151,7 +154,6 @@ sed -i 's/markdown2~=2\.4\.[0-9]*/markdown2~=2.5.0/' "$FRAPPE_TARGET_DIR/pyproje
 #     "sentry-sdk"        # Error tracking
 #     "vobject"           # vCard/iCalendar support
 #     "pdfkit"            # wkhtmltopdf wrapper – replaced by WeasyPrint via hooks
-#     "pypdf"             # remove from frappe deps; your app should provide its own version
 # )
 #
 # for lib in "${unneeded_libs[@]}"; do
