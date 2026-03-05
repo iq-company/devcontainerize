@@ -1,6 +1,6 @@
 # Alpine variant configuration for dev image
 # Use: bench ops dockerfile create -v alpine
-# Note: Alpine builds may have limited functionality (no wkhtmltopdf)
+# Note: Alpine uses WeasyPrint for PDF generation (wkhtmltopdf not available)
 
 alpine_version: "3.21"
 

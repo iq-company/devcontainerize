@@ -150,7 +150,8 @@ sed -i 's/markdown2~=2\.4\.[0-9]*/markdown2~=2.5.0/' "$FRAPPE_TARGET_DIR/pyproje
 #     "maxminddb-geolite2"  # GeoIP lookup
 #     "sentry-sdk"        # Error tracking
 #     "vobject"           # vCard/iCalendar support
-#     "weasyprint"        # PDF generation (alternative to wkhtmltopdf)
+#     "pdfkit"            # wkhtmltopdf wrapper – replaced by WeasyPrint via hooks
+#     "pypdf"             # remove from frappe deps; your app should provide its own version
 # )
 #
 # for lib in "${unneeded_libs[@]}"; do
@@ -177,6 +178,31 @@ sed -i 's/markdown2~=2\.4\.[0-9]*/markdown2~=2.5.0/' "$FRAPPE_TARGET_DIR/pyproje
 # Example - Remove Sentry:
 # remove_import "from frappe.utils.sentry" "$FRAPPE_TARGET_DIR/frappe/utils/error.py"
 # remove_import "capture_exception" "$FRAPPE_TARGET_DIR/frappe/utils/error.py"
+#
+# --- pdfkit → WeasyPrint (Alpine has no wkhtmltopdf) ---
+if [ -f /etc/alpine-release ]; then
+    echo "Alpine detected – patching pdfkit → WeasyPrint..."
+
+    # 1) Make "import pdfkit" conditional so the module still loads
+    sed -i 's/^import pdfkit$/try:\n    import pdfkit\nexcept ImportError:\n    pdfkit = None/' \
+        "$FRAPPE_TARGET_DIR/frappe/utils/pdf.py"
+
+    # 2) Add fallback at the top of get_pdf(): if pdfkit is missing, delegate to
+    #    iq_core's WeasyPrint-based implementation.  This covers ALL callers
+    #    (report_to_pdf, email attachments, attach_print, …).
+    sed -i '/^def get_pdf(html, options=None, output/,/^[[:space:]]*"""/{
+        /^[[:space:]]*"""$/{
+            a\    if pdfkit is None:\
+            from iq_core.overrides.pdf import get_pdf as _weasyprint_get_pdf\
+            return _weasyprint_get_pdf(html, options=options, output=output)
+        }
+    }' "$FRAPPE_TARGET_DIR/frappe/utils/pdf.py"
+
+    # 3) Change default pdf_generator in get_print() from "wkhtmltopdf" to "weasyprint"
+    #    so the pdf_generator hook fires for all get_print(as_pdf=True) paths.
+    sed -i "s/) or \"wkhtmltopdf\"/) or \"weasyprint\"/" \
+        "$FRAPPE_TARGET_DIR/frappe/utils/print_utils.py"
+fi
 
 # =============================================================================
 # 5. Stub download_frappe_assets (broken on Alpine ash, not needed)

@@ -21,11 +21,14 @@ recipes:
           {% if default_dbms == 'postgres' %}postgresql-client libpq5{% elif default_dbms == 'mariadb' %}mariadb-client libmariadb3{% else %}sqlite3{% endif %} \
           wait-for-it jq nginx
     alpine: |
+      # WeasyPrint runtime deps (pango/cairo) – replaces wkhtmltopdf (not available on Alpine)
       apk add --no-cache \
           wget gettext file \
           bash jq coreutils curl gzip \
           {% if default_dbms == 'postgres' %}postgresql-client libpq{% elif default_dbms == 'mariadb' %}mariadb-client mariadb-connector-c{% else %}sqlite{% endif %} \
-          nginx nginx-mod-http-lua lua-resty-core; \
+          nginx nginx-mod-http-lua lua-resty-core \
+          pango cairo gdk-pixbuf fontconfig \
+          font-noto font-noto-cjk; \
       # Remove Alpine's default nginx config (listens on port 80, conflicts with our config)
       rm -f /etc/nginx/http.d/default.conf; \
       # Nginx: ensure ALL dirs exist and are writable (used by dev and release)
@@ -55,12 +58,14 @@ recipes:
           libbz2-dev cmake libtool m4 automake build-essential \
           {% if default_dbms == 'postgres' %}libpq-dev{% elif default_dbms == 'mariadb' %}libmariadb-dev{% else %}libsqlite3-dev{% endif %}
     alpine: |
+      # WeasyPrint build deps (pango/cairo) included
       apk add --no-cache \
           git make wget \
           jpeg-dev giflib-dev librsvg-dev \
           libffi-dev lcms2-dev tiff-dev libwebp-dev \
           redis \
-          {% if default_dbms == 'postgres' %}libpq-dev{% elif default_dbms == 'mariadb' %}mariadb-dev{% else %}sqlite-dev{% endif %}
+          {% if default_dbms == 'postgres' %}libpq-dev{% elif default_dbms == 'mariadb' %}mariadb-dev{% else %}sqlite-dev{% endif %} \
+          pango-dev cairo-dev gdk-pixbuf-dev
 
   # --- Compile DBMS client in builder stage (only postgres needs compilation) ---
   compile_dbms:

@@ -1,5 +1,14 @@
 # Operations hooks for the app
 # These hooks are automatically imported into hooks.py by the copier task
+# import os
+
+# --- PDF generation: WeasyPrint on Alpine (no wkhtmltopdf available) ---
+# On Alpine the frappe-patches.sh patches get_pdf() to use weasyprint.
+# To use this, create {{app_name}}/overrides/pdf.py with get_pdf() and
+# pdf_generator_hook() functions, and register WeasyPrint system deps in
+# your 00-frappe.yml recipe.
+# if os.path.exists("/etc/alpine-release"):
+#     pdf_generator = "{{app_name}}.overrides.pdf.pdf_generator_hook"
 
 # Test Hooks - A selection of groupable tests to run with `bench ops run-tests`
 # --------------------------------
