@@ -103,6 +103,15 @@ def ops():
 @click.option("-r", "--recopy", is_flag=True, help="Recopy template (ignores git status, works on dirty repos)")
 def update_cmd(dry: bool, recopy: bool):
     """Update from devcontainerize template."""
+    if not shutil.which("copier"):
+        if os.environ.get("DEV_CONTAINER") == "1":
+            click.echo("📦 copier not found – installing into DevContainer...")
+            subprocess.run([sys.executable, "-m", "pip", "install", "--quiet", "copier"], check=True)
+        else:
+            click.echo("❌ copier is not installed.", err=True)
+            click.echo("   Install it with:  pip install copier", err=True)
+            sys.exit(1)
+
     app_root = get_app_root()
     answers_file = app_root / "ops" / "build" / ".copier-answers.yml"
 
@@ -110,12 +119,10 @@ def update_cmd(dry: bool, recopy: bool):
     if not answers_file.exists():
         answers_file = app_root / ".copier-answers.yml"
 
-    # Use recopy for dirty repos, update for clean repos
     copier_cmd = "recopy" if recopy else "update"
     cmd = ["copier", copier_cmd, "--trust", "--defaults"]
 
     if answers_file.exists():
-        # copier requires relative path for answers-file
         relative_answers = answers_file.relative_to(app_root)
         cmd.extend(["--answers-file", str(relative_answers)])
 
