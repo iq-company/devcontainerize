@@ -25,7 +25,13 @@ from pathlib import Path
 from typing import Callable, Optional
 
 import click
-import frappe
+
+try:
+    import frappe
+    _HAS_FRAPPE = True
+except ImportError:
+    _HAS_FRAPPE = False
+    frappe = None
 
 
 # =============================================================================
@@ -289,7 +295,7 @@ class TagImagesStep(UpdateStep):
             result = subprocess.run(cmd, capture_output=True)
             if result.returncode == 0:
                 # Get image ID for later comparison
-                id_cmd = ["docker", "image", "inspect", image, "--format", "{% raw %}{{.Id}}{% endraw %}"]
+                id_cmd = ["docker", "image", "inspect", image, "--format", "{{.Id}}"]
                 id_result = subprocess.run(id_cmd, capture_output=True, text=True)
                 image_id = id_result.stdout.strip() if id_result.returncode == 0 else ""
 
@@ -504,7 +510,7 @@ class CleanupRollbackImagesStep(UpdateStep):
             current_ref = new_images.get(service, "")
             current_id = ""
             if current_ref:
-                id_cmd = ["docker", "image", "inspect", current_ref, "--format", "{% raw %}{{.Id}}{% endraw %}"]
+                id_cmd = ["docker", "image", "inspect", current_ref, "--format", "{{.Id}}"]
                 id_result = subprocess.run(id_cmd, capture_output=True, text=True)
                 current_id = id_result.stdout.strip() if id_result.returncode == 0 else ""
 
@@ -581,37 +587,73 @@ class RollbackStep(UpdateStep):
 # =============================================================================
 
 class HookRunner:
-    """Runs hooks defined in apps' hooks.py."""
+    """Runs hooks defined in apps' hooks.py / ops_hooks.py."""
+
+    @staticmethod
+    def _load_hooks_from_file(hook_name: str) -> list[dict]:
+        """Load ops_update_hooks directly from ops_hooks.py (standalone fallback).
+
+        Walks up from this script to the app root and imports the ops_hooks
+        module without requiring frappe.
+        """
+        app_root = Path(__file__).resolve().parents[2]
+        # Derive the package name from the app root directory
+        package_name = app_root.name
+        hooks_file = app_root / package_name / "ops_hooks.py"
+
+        if not hooks_file.exists():
+            return []
+
+        try:
+            import importlib.util
+            spec = importlib.util.spec_from_file_location("_ops_hooks", hooks_file)
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            all_hooks = getattr(mod, "ops_update_hooks", {})
+            return all_hooks.get(hook_name, [])
+        except Exception:
+            return []
 
     @staticmethod
     def get_hooks(hook_name: str) -> list[HookDefinition]:
-        """Get all hooks for a given hook point, sorted by order."""
+        """Get all hooks for a given hook point, sorted by order.
+
+        With frappe: collects hooks from all installed apps via frappe's
+        hook registry (supports multi-app hook composition).
+        Without frappe: loads hooks directly from the app's ops_hooks.py.
+        """
         hooks_by_id = {}
 
-        try:
-            installed_apps = frappe.get_installed_apps()
-        except Exception:
-            installed_apps = ["{{app_name}}"]
-
-        for app_name in installed_apps:
+        if _HAS_FRAPPE:
             try:
-                app_hooks = frappe.get_hooks("ops_update_hooks", app_name=app_name) or {}
-                hook_list = app_hooks.get(hook_name, [])
-
-                for hook in hook_list:
-                    hook_def = HookDefinition(
-                        id=hook.get("id", hook.get("function", "")),
-                        order=hook.get("order", 50),
-                        function=hook.get("function", ""),
-                        description=hook.get("description", "")
-                    )
-                    # Later definitions override earlier ones (by ID)
-                    hooks_by_id[hook_def.id] = hook_def
-
+                installed_apps = frappe.get_installed_apps()
             except Exception:
-                continue
+                installed_apps = [Path(__file__).resolve().parents[2].name]
 
-        # Sort by order
+            for app_name in installed_apps:
+                try:
+                    app_hooks = frappe.get_hooks("ops_update_hooks", app_name=app_name) or {}
+                    hook_list = app_hooks.get(hook_name, [])
+                    for hook in hook_list:
+                        hook_def = HookDefinition(
+                            id=hook.get("id", hook.get("function", "")),
+                            order=hook.get("order", 50),
+                            function=hook.get("function", ""),
+                            description=hook.get("description", "")
+                        )
+                        hooks_by_id[hook_def.id] = hook_def
+                except Exception:
+                    continue
+        else:
+            for hook in HookRunner._load_hooks_from_file(hook_name):
+                hook_def = HookDefinition(
+                    id=hook.get("id", hook.get("function", "")),
+                    order=hook.get("order", 50),
+                    function=hook.get("function", ""),
+                    description=hook.get("description", "")
+                )
+                hooks_by_id[hook_def.id] = hook_def
+
         return sorted(hooks_by_id.values(), key=lambda h: h.order)
 
     @staticmethod
