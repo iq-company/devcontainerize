@@ -134,6 +134,9 @@ sed -i 's/markdown2~=2\.4\.[0-9]*/markdown2~=2.5.0/' "$FRAPPE_TARGET_DIR/pyproje
 # pypdf 3.x → 6.7.x (CVE fixes in 3.x)
 sed -i 's/pypdf~=3\.[0-9]*\.[0-9]*/pypdf~=6.7/' "$FRAPPE_TARGET_DIR/pyproject.toml"
 
+# PyJWT 2.8.x → 2.12.x (CVE in <=2.8.0)
+sed -i 's/PyJWT~=2\.8\.[0-9]*/PyJWT~=2.12.0/' "$FRAPPE_TARGET_DIR/pyproject.toml"
+
 # =============================================================================
 # 3. Remove Unused Python Dependencies
 # =============================================================================
