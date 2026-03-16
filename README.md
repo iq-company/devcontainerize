@@ -45,18 +45,25 @@ copier copy gh:iq-company/devcontainerize . --data-file=copier-answers.yml --tru
 
 ### 3. Build and run
 
-When `feature_image_creation` is enabled (default), copier automatically:
-1. Adds `baker-cli` to your `pyproject.toml` dev dependencies
-2. Runs `pip install -e ".[dev]"` to install it
+The `ops` CLI can be used standalone (without bench/frappe) or via `bench ops`.
 
-You can then build Docker images:
+**Standalone (lightweight, no frappe needed):**
 ```bash
-bench ops build plan           # Show what would be built
-bench ops build images         # Build images
-bench ops build images --push  # Build and push to registry
+python3.12 -m venv env
+source env/bin/activate
+bash ops/scripts/install_ops.sh --build   # Installs ops CLI + baker-cli
+ops build -t dev                          # Build dev image
 ```
 
-If the automatic installation fails, run manually:
+**Via bench (when bench is installed):**
+```bash
+bench ops build                 # Show build plan
+bench ops build -t dev          # Build dev image
+bench ops build -a -p           # Build and push all to registry
+```
+
+When `feature_image_creation` is enabled (default), copier also adds `baker-cli`
+to your `pyproject.toml` dev dependencies. If the automatic installation fails:
 ```bash
 pip install -e ".[dev]"
 ```
@@ -260,6 +267,9 @@ app/
 │   │       ├── run_release_helper.sh
 │   │       ├── stop_release_helper.sh
 │   │       └── clean_release_helper.sh
+│   ├── ops.py                     # Standalone ops CLI (no frappe needed)
+│   ├── ops_update.py              # Update orchestrator (standalone)
+│   └── install_ops.sh             # Install ops CLI into venv
 │   └── copier/                    # Copier tasks (not copied to target)
 │       ├── patch_commands_init_py.py
 │       ├── patch_pyproject_toml.py
@@ -268,7 +278,7 @@ app/
     └── commands/
         ├── __init__.py
         ├── dist_commands.py       # Distribution commands
-        └── ops_commands.py        # bench ops CLI
+        └── ops_commands.py        # bench ops wrapper + frappe commands
 ```
 
 ---
@@ -295,43 +305,54 @@ app/
 
 ## CLI Commands
 
-### bench ops
+### ops / bench ops
 
-The `bench ops` CLI provides commands for template updates, builds, stages, and maintenance.
+The `ops` CLI provides commands for template updates, builds, stages, and maintenance.
+It works standalone (without bench/frappe) or via `bench ops` (which adds frappe-dependent commands).
 
+**Standalone commands** (work without bench/frappe, via `ops` or `bench ops`):
 ```bash
+# Setup
+bash ops/scripts/install_ops.sh          # Install ops CLI into venv
+bash ops/scripts/install_ops.sh --build  # ...including baker-cli for builds
+
 # Template Update
-bench ops update                # Update from template
-bench ops update -d/--dry       # Preview changes (dry run)
-bench ops update -r/--recopy    # Recopy template (for dirty repos)
+ops update                      # Update from template
+ops update -d/--dry             # Preview changes (dry run)
 
 # Version Management
-bench ops version               # Show current version
-bench ops version -b/--bump     # Bump bugfix version (default)
-bench ops version -b -m/--major # Bump major version
-bench ops version -b -f/--feature # Bump feature version
-bench ops version -b -c/--commit  # Bump and commit
+ops version                     # Show current version
+ops version -b/--bump           # Bump bugfix version (default)
 
 # Build (wrapper for baker-cli)
-bench ops build                 # Show build plan (default)
-bench ops build -i/--images     # Build Docker images
-bench ops build -i -p/--push    # Build and push to registry
-bench ops build -i -f/--force   # Force rebuild
+ops build                       # Show build plan (default)
+ops build -t dev                # Build specific target
+ops build -a                    # Build all targets
+ops build -a -p                 # Build and push to registry
 
 # Stage Management
-bench ops stage ls              # List all defined stages
-bench ops stage ls -v           # List with details
-bench ops stage show <name>     # Show stage configuration
-bench ops stage run <name>      # Start environment for stage
-bench ops stage stop <name>     # Stop environment for stage
-bench ops stage clean <name>    # Clean up stage containers
-bench ops stage clean <name> -v # Also remove volumes
-bench ops stage build <name>    # Build images for stage
-bench ops stage env <name>      # Generate .env file for stage
-bench ops stage add <name>      # Add a new stage
-bench ops stage rm <name>       # Remove a stage
+ops stage ls                    # List all defined stages
+ops stage show <name>           # Show stage configuration
+ops stage run <name>            # Start environment for stage
+ops stage run <name> --update   # Controlled update with rollback
+ops stage stop <name>           # Stop environment for stage
+ops stage clean <name>          # Clean up stage containers
+ops stage build <name>          # Build images for stage
+ops stage env <name>            # Generate .env file for stage
+ops stage add <name>            # Add a new stage
+ops stage rm <name>             # Remove a stage
 
-# Testing
+# Dockerfile Management
+ops dockerfile                  # Show Dockerfile status
+ops dockerfile create           # Create from templates
+ops dockerfile update           # Regenerate existing
+
+# Security
+ops trivy <name>                # Scan stage image for CVEs
+```
+
+**Bench-only commands** (require frappe, via `bench ops`):
+```bash
 bench ops run-tests             # Run all whitelisted tests (in ops_hooks.py)
 bench ops run-tests -s Auth     # Run tests for specific section
 ```
@@ -487,7 +508,7 @@ The `setup_bench_apps.py` script:
 
 ### baker-cli (Direct)
 
-For more advanced build operations:
+The `ops build` command wraps `baker-cli` for convenience. For direct access:
 
 ```bash
 baker plan                      # Show full build plan

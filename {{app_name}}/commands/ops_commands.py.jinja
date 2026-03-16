@@ -1,32 +1,19 @@
 """
-Bench ops CLI - Operations commands for template updates, builds, testing, and maintenance.
+Bench integration for the standalone ops CLI.
 
-Usage:
-    bench ops update                     # Update from template
-    bench ops version                    # Show version
-    bench ops version --bump             # Bump version
-    bench ops dockerfile                 # Show Dockerfile status and available variants
-    bench ops dockerfile create          # Create Dockerfiles from templates
-    bench ops dockerfile update          # Regenerate existing Dockerfiles
-    bench ops build                      # Show build plan
-    bench ops build --images             # Build Docker images
-    bench ops run-tests                  # Run tests
-    bench ops release-dist               # Execute release cleanup
-    bench ops trivy <stage>              # Scan stage image for CVEs
-    bench ops stage ls                   # List all stages
-    bench ops stage show <stage>         # Show stage details
-    bench ops stage run <stage>          # Start stage environment
-    bench ops stage run <stage> --update  # Controlled update with rollback
-    bench ops stage stop <stage>         # Stop stage environment
-    bench ops stage clean <stage>        # Clean stage environment
-    bench ops stage build <stage>        # Build images for stage
-    bench ops stage add                  # Add a new stage
-    bench ops stage rm <stage>           # Remove a stage
+Loads the standalone ops CLI from ops/scripts/ops.py and extends it with
+commands that require frappe (run-tests, release-dist).
+
+Standalone usage (without bench):
+    ops <command>                        # via ops/scripts/ops.py
+
+Bench usage (all commands including frappe-dependent ones):
+    bench ops <command>
 """
 
 import importlib
+import importlib.util
 import os
-import re
 import shutil
 import subprocess
 import sys
@@ -36,13 +23,26 @@ from typing import Optional
 
 import click
 import frappe
-import yaml
 from frappe.commands import pass_context
 
+# =============================================================================
+# Load standalone ops CLI
+# =============================================================================
 
-def get_app_root() -> Path:
-    """Get the app root directory (where ops/ is located)."""
-    return Path(__file__).parents[2]
+_standalone_path = Path(__file__).resolve().parents[2] / "ops" / "scripts" / "ops.py"
+
+if not _standalone_path.exists():
+    raise ImportError(
+        f"Standalone ops CLI not found at {_standalone_path}. "
+        "Ensure ops/scripts/ops.py exists in the app root."
+    )
+
+_spec = importlib.util.spec_from_file_location("ops_standalone", _standalone_path)
+_ops_mod = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(_ops_mod)
+
+ops = _ops_mod.ops
+get_app_root = _ops_mod.get_app_root
 
 
 def get_bench_root() -> Path:
@@ -51,467 +51,7 @@ def get_bench_root() -> Path:
 
 
 # =============================================================================
-# Main CLI Group
-# =============================================================================
-
-@click.group()
-def ops():
-    """Operations CLI for template updates, builds, and maintenance."""
-    pass
-
-
-# =============================================================================
-# Update Command (copier Template Sync)
-# =============================================================================
-
-@ops.command("update")
-@click.option("-d", "--dry", is_flag=True, help="Dry run (preview changes without applying)")
-@click.option("-r", "--recopy", is_flag=True, help="Recopy template (ignores git status, works on dirty repos)")
-def update_cmd(dry: bool, recopy: bool):
-    """Update from devcontainerize template."""
-    app_root = get_app_root()
-    answers_file = app_root / "ops" / "build" / ".copier-answers.yml"
-
-    # Fallback to legacy location
-    if not answers_file.exists():
-        answers_file = app_root / ".copier-answers.yml"
-
-    # Use recopy for dirty repos, update for clean repos
-    copier_cmd = "recopy" if recopy else "update"
-    cmd = ["copier", copier_cmd, "--trust", "--defaults"]
-
-    if answers_file.exists():
-        # copier requires relative path for answers-file
-        relative_answers = answers_file.relative_to(app_root)
-        cmd.extend(["--answers-file", str(relative_answers)])
-
-    if dry:
-        cmd.append("--pretend")
-        click.echo("🔍 Dry run - showing what would change:")
-
-    click.echo(f"Running: {' '.join(cmd)}")
-    click.echo(f"\t(use --recopy to force update on repository with local changes)")
-    result = subprocess.run(cmd, cwd=app_root)
-    sys.exit(result.returncode)
-
-
-# =============================================================================
-# Version Command
-# =============================================================================
-
-@ops.command("version")
-@click.option("-b", "--bump", is_flag=True, help="Bump version number")
-@click.option("-m", "--major", is_flag=True, help="Bump major version (X.0.0)")
-@click.option("-f", "--feature", is_flag=True, help="Bump feature version (x.X.0)")
-@click.option("-c", "--commit", is_flag=True, help="Commit the version bump")
-def version_cmd(bump: bool, major: bool, feature: bool, commit: bool):
-    """Show or bump version number."""
-    app_root = get_app_root()
-    version_file = app_root / "ops" / "build" / "VERSION"
-    init_file = app_root / "{{ app_name }}" / "__init__.py"
-
-    if not version_file.exists():
-        click.echo("❌ VERSION file not found at ops/build/VERSION")
-        sys.exit(1)
-
-    current = version_file.read_text().strip()
-
-    if not bump:
-        # Just show version
-        click.echo(f"Version: {current}")
-
-        # Also show template info if available
-        answers_file = app_root / "ops" / "build" / ".copier-answers.yml"
-        if not answers_file.exists():
-            answers_file = app_root / ".copier-answers.yml"
-        if answers_file.exists():
-            click.echo(f"\nTemplate answers: {answers_file}")
-        return
-
-    # Bump version
-    parts = current.split(".")
-    if len(parts) != 3:
-        click.echo(f"❌ Invalid version format: {current}")
-        sys.exit(1)
-
-    maj, minor, patch = map(int, parts)
-
-    if major:
-        new_version = f"{maj + 1}.0.0"
-    elif feature:
-        new_version = f"{maj}.{minor + 1}.0"
-    else:  # bugfix (default)
-        new_version = f"{maj}.{minor}.{patch + 1}"
-
-    click.echo(f"Bumping version: {current} → {new_version}")
-
-    # Update VERSION file
-    version_file.write_text(new_version + "\n")
-    click.echo(f"✓ Updated {version_file}")
-
-    # Update __init__.py if it exists
-    if init_file.exists():
-        content = init_file.read_text()
-        new_content = re.sub(
-            r'__version__\s*=\s*"[0-9]+\.[0-9]+\.[0-9]+"',
-            f'__version__ = "{new_version}"',
-            content
-        )
-        init_file.write_text(new_content)
-        click.echo(f"✓ Updated {init_file}")
-
-    if commit:
-        subprocess.run(["git", "add", str(version_file), str(init_file)], cwd=app_root)
-        subprocess.run(["git", "commit", "-m", f"chore: Bump version to {new_version}"], cwd=app_root)
-        click.echo("✓ Committed version bump")
-
-
-# =============================================================================
-# Build Command
-# =============================================================================
-
-@ops.command("build")
-@click.option("-a", "--all", "build_all", is_flag=True, help="Build all targets")
-@click.option("-t", "--targets", multiple=True, help="Specific targets to build (implies build)")
-@click.option("-p", "--push", is_flag=True, help="Push images after building")
-@click.option("-f", "--force", is_flag=True, help="Force rebuild (implies build)")
-def build_cmd(build_all: bool, targets: tuple, push: bool, force: bool):
-    """Show build plan or build Docker images.
-
-    Without options: shows build plan with available commands.
-    With -t TARGET: builds specific target(s).
-    With -a: builds all targets.
-    With -f: forces rebuild of specified or all targets.
-    """
-    app_root = get_app_root()
-    settings = app_root / "ops" / "build" / "build-settings.yml"
-
-    if not settings.exists():
-        click.echo(f"❌ Build settings not found at {settings}")
-        sys.exit(1)
-
-    # Determine if we should build: -a, -t, or -f implies building
-    should_build = build_all or targets or force
-
-    if should_build:
-        # Build images
-        cmd = [sys.executable, "-m", "baker_cli", "build", "--settings", str(settings)]
-
-        if targets:
-            cmd.extend(["--targets", ",".join(targets)])
-        if push:
-            cmd.append("--push")
-        if force:
-            # baker-cli --force expects target names to force rebuild
-            if targets:
-                for t in targets:
-                    cmd.extend(["--force", t])
-            elif build_all:
-                # Force all targets - need to get target list from settings
-                import yaml
-                with open(settings) as f:
-                    cfg = yaml.safe_load(f)
-                for t in cfg.get("targets", {}).keys():
-                    cmd.extend(["--force", t])
-            else:
-                click.echo("⚠️  --force without -t or -a: forcing all targets")
-                import yaml
-                with open(settings) as f:
-                    cfg = yaml.safe_load(f)
-                for t in cfg.get("targets", {}).keys():
-                    cmd.extend(["--force", t])
-
-        result = subprocess.run(cmd, cwd=app_root)
-        sys.exit(result.returncode)
-    else:
-        # Show plan with helpful commands
-        cmd = [sys.executable, "-m", "baker_cli", "plan", "--settings", str(settings)]
-        result = subprocess.run(cmd, cwd=app_root)
-
-        if result.returncode == 0:
-            click.echo("")
-            click.echo("📋 Build commands:")
-            click.echo("   bench ops build -a           Build all targets")
-            click.echo("   bench ops build -t TARGET    Build specific target")
-            click.echo("   bench ops build -t TARGET -f Force rebuild target")
-            click.echo("   bench ops build -a -f        Force rebuild all")
-            click.echo("   bench ops build -a -p        Build and push to registry")
-
-        sys.exit(result.returncode)
-
-
-# =============================================================================
-# Dockerfile Commands
-# =============================================================================
-
-@ops.group(invoke_without_command=True)
-@click.pass_context
-def dockerfile(ctx):
-    """Manage Dockerfiles (generate from templates)."""
-    # Show status if no subcommand given
-    if ctx.invoked_subcommand is None:
-        ctx.invoke(dockerfile_ls)
-
-
-@dockerfile.command("ls")
-def dockerfile_ls():
-    """Show Dockerfile status and available variants."""
-    app_root = get_app_root()
-    docker_dir = app_root / "ops" / "build" / "docker"
-    templates_dir = app_root / "ops" / "build" / "docker-templates"
-    settings_file = app_root / "ops" / "build" / "build-settings.yml"
-    copier_answers_file = app_root / ".copier-answers.yml"
-
-    # Load settings to get targets and defaults
-    targets = []
-    dockerfile_defaults = {}
-    if settings_file.exists():
-        with open(settings_file) as f:
-            settings = yaml.safe_load(f)
-            targets = list(settings.get("targets", {}).keys())
-            dockerfile_defaults = settings.get("dockerfile_defaults", {})
-
-    # Load copier answers (project-specific values)
-    copier_answers = {}
-    if copier_answers_file.exists():
-        with open(copier_answers_file) as f:
-            data = yaml.safe_load(f) or {}
-            copier_answers = {k: v for k, v in data.items() if not k.startswith("_") and v is not None}
-
-    # Merge defaults
-    merged_defaults = {**copier_answers, **dockerfile_defaults}
-
-    click.echo("📦 Dockerfiles:")
-    click.echo(f"   Output:    {docker_dir.relative_to(app_root)}/")
-    click.echo(f"   Templates: {templates_dir.relative_to(app_root)}/")
-    click.echo("")
-
-    # Check each target
-    click.echo("   Target      Dockerfile                    Template")
-    click.echo("   " + "-" * 60)
-
-    for target in targets:
-        dockerfile = docker_dir / f"Dockerfile.{target}"
-        template = templates_dir / target / "Dockerfile.j2"
-
-        df_status = "✓" if dockerfile.exists() else "✗"
-        tpl_status = "✓" if template.exists() else "✗"
-
-        df_name = f"Dockerfile.{target}"
-        tpl_name = f"{target}/Dockerfile.j2"
-
-        click.echo(f"   {target:<10} [{df_status}] {df_name:<25} [{tpl_status}] {tpl_name}")
-
-    # Collect variants with subvariants
-    click.echo("")
-    click.echo("🎨 Available variants:")
-
-    variants_info = {}  # {variant: {"complete": bool, "missing": []}}
-
-    for target in targets:
-        variants_dir = templates_dir / target / "variants"
-        if variants_dir.exists():
-            for f in variants_dir.glob("*.yml"):
-                base_variant = f.stem
-                if base_variant not in variants_info:
-                    variants_info[base_variant] = _check_variant_defaults(base_variant, merged_defaults)
-
-                # Check for subvariants
-                with open(f) as vf:
-                    vconfig = yaml.safe_load(vf) or {}
-                    for sub in vconfig.get("subvariants", {}).keys():
-                        full_variant = f"{base_variant}-{sub}"
-                        if full_variant not in variants_info:
-                            variants_info[full_variant] = _check_variant_defaults(full_variant, merged_defaults)
-
-    if variants_info:
-        for v in sorted(variants_info.keys()):
-            info = variants_info[v]
-            if info["complete"]:
-                click.echo(f"   ✓ {v}")
-            else:
-                missing_str = ", ".join(info["missing"])
-                click.echo(f"   ✗ {v}  (missing: {missing_str})")
-    else:
-        click.echo("   (none found - using default: debian)")
-
-    # Show defaults status
-    click.echo("")
-    click.echo("⚙️  Defaults (from .copier-answers.yml + build-settings.yml):")
-    important_keys = ["app_name", "image_user", "python_version", "debian_base", "alpine_version"]
-    for key in important_keys:
-        val = merged_defaults.get(key)
-        if val:
-            click.echo(f"   {key}: {val}")
-        else:
-            click.echo(f"   {key}: (not set)")
-
-    # Show active variant from settings
-    active_variant = _get_dockerfile_setting("variant", "debian")
-    click.echo("")
-    click.echo(f"🔧 Active variant: {active_variant}")
-    click.echo("   (auto-saved when using -v/--variant)")
-
-    # Show commands
-    click.echo("")
-    click.echo("📝 Commands:")
-    click.echo(f"   bench ops dockerfile create             # Create all ({active_variant})")
-    click.echo("   bench ops dockerfile create -v alpine   # Create for Alpine (saves choice)")
-    click.echo("   bench ops dockerfile update             # Regenerate existing")
-    click.echo("")
-    click.echo(f"   To delete: rm {docker_dir.relative_to(app_root)}/Dockerfile.*")
-
-
-def _check_variant_defaults(variant: str, defaults: dict) -> dict:
-    """Check if all required defaults for a variant are present."""
-    base_variant = variant.split("-")[0] if "-" in variant else variant
-
-    common = ["python_version", "node_version"]
-
-    if base_variant == "debian":
-        required = common + ["debian_base"]
-    elif base_variant == "alpine":
-        required = common + ["alpine_version"]
-    else:
-        required = common
-
-    missing = [k for k in required if k not in defaults or defaults.get(k) is None]
-    return {"complete": len(missing) == 0, "missing": missing}
-
-
-@dockerfile.command("create")
-@click.option("-v", "--variant", default=None, help="Platform variant (debian, alpine, ...)")
-@click.option("-t", "--targets", multiple=True, help="Specific targets (default: all)")
-@click.option("--dry-run", is_flag=True, help="Preview without writing")
-@click.option("--diff", is_flag=True, help="Show diff of changes")
-def dockerfile_create(variant: str, targets: tuple, dry_run: bool, diff: bool):
-    """Create Dockerfiles from templates.
-
-    Generates Dockerfiles in ops/build/docker/ from templates.
-    The --variant choice is persisted in build-settings.yml for subsequent calls.
-
-    Examples:
-        bench ops dockerfile create               # Create all (saved or default variant)
-        bench ops dockerfile create -v alpine    # Create for Alpine (saves choice)
-        bench ops dockerfile create -t dev       # Create specific target
-    """
-    variant_explicit = variant is not None
-    if not variant:
-        variant = _get_dockerfile_setting("variant", "debian")
-
-    _run_dockerfile_gen(variant, targets, dry_run, diff, "Creating",
-                        save_variant=variant_explicit)
-
-
-@dockerfile.command("update")
-@click.option("-v", "--variant", default=None, help="Platform variant (default: from settings)")
-@click.option("-t", "--targets", multiple=True, help="Specific targets (default: all)")
-@click.option("--dry-run", is_flag=True, help="Preview without writing")
-@click.option("--diff", is_flag=True, help="Show diff of changes")
-def dockerfile_update(variant: str, targets: tuple, dry_run: bool, diff: bool):
-    """Regenerate existing Dockerfiles.
-
-    Use after updating templates or recipes.
-    The --variant choice is persisted in build-settings.yml for subsequent calls.
-
-    Examples:
-        bench ops dockerfile update              # Regenerate all (saved variant)
-        bench ops dockerfile update -t dev       # Regenerate specific target
-        bench ops dockerfile update -v alpine    # Switch to Alpine (saves choice)
-    """
-    variant_explicit = variant is not None
-    if not variant:
-        variant = _get_dockerfile_setting("variant", "debian")
-
-    _run_dockerfile_gen(variant, targets, dry_run, diff, "Updating",
-                        save_variant=variant_explicit)
-
-
-def _load_build_settings() -> tuple[dict, Path]:
-    """Load build-settings.yml and return (data, path)."""
-    app_root = get_app_root()
-    settings_file = app_root / "ops" / "build" / "build-settings.yml"
-
-    if not settings_file.exists():
-        return {}, settings_file
-
-    with open(settings_file) as f:
-        data = yaml.safe_load(f) or {}
-    return data, settings_file
-
-
-def _get_dockerfile_setting(key: str, default: str = "") -> str:
-    """Read a value from dockerfile_settings in build-settings.yml."""
-    data, _ = _load_build_settings()
-    settings = data.get("dockerfile_settings", {})
-    return settings.get(key, default) if settings else default
-
-
-def _save_dockerfile_settings(**kwargs):
-    """Save key-value pairs to dockerfile_settings in build-settings.yml.
-
-    Only updates the provided keys, preserving the rest of the file.
-    """
-    app_root = get_app_root()
-    settings_file = app_root / "ops" / "build" / "build-settings.yml"
-
-    if not settings_file.exists():
-        return
-
-    with open(settings_file) as f:
-        data = yaml.safe_load(f) or {}
-
-    if "dockerfile_settings" not in data:
-        data["dockerfile_settings"] = {}
-
-    changed = False
-    for key, value in kwargs.items():
-        if data["dockerfile_settings"].get(key) != value:
-            data["dockerfile_settings"][key] = value
-            changed = True
-
-    if changed:
-        with open(settings_file, "w") as f:
-            yaml.dump(data, f, default_flow_style=False, sort_keys=False)
-        click.echo(f"   💾 Saved dockerfile settings: {', '.join(f'{k}={v}' for k, v in kwargs.items())}")
-
-
-def _run_dockerfile_gen(variant: str, targets: tuple, dry_run: bool, diff: bool,
-                        action: str, save_variant: bool = False):
-    """Internal helper to run baker gen-docker."""
-    app_root = get_app_root()
-    settings_file = app_root / "ops" / "build" / "build-settings.yml"
-
-    if not settings_file.exists():
-        click.echo(f"❌ Build settings not found: {settings_file}")
-        sys.exit(1)
-
-    cmd = [sys.executable, "-m", "baker_cli", "gen-docker", "--settings", str(settings_file)]
-    cmd.extend(["--variant", variant])
-
-    if targets:
-        cmd.extend(["--targets", ",".join(targets)])
-    if dry_run:
-        cmd.append("--dry-run")
-    if diff:
-        cmd.append("--diff")
-
-    click.echo(f"🔧 {action} Dockerfiles (variant: {variant})...")
-
-    # Save variant to settings if explicitly provided
-    if save_variant and not dry_run:
-        _save_dockerfile_settings(variant=variant)
-
-    result = subprocess.run(cmd, cwd=app_root)
-
-    if result.returncode == 0:
-        action_past = "created" if action == "Creating" else "updated"
-        click.echo(f"✅ Dockerfiles {action_past} successfully")
-    sys.exit(result.returncode)
-
-
-# =============================================================================
-# Run Tests Command
+# Run Tests Helpers
 # =============================================================================
 
 def _get_test_site_name(base_site: str) -> str:
@@ -566,15 +106,12 @@ def _add_stage_to_stages_yml(stage_name: str, target: str = "dev") -> bool:
     if "stages" not in config:
         config["stages"] = {}
 
-    # Add test stage configuration
     config["stages"][stage_name] = {
         "target": target,
         "env_file": f".env.{stage_name}",
         "profiles": ["db", "redis"]
     }
 
-    # Write back with preserved formatting (add as comment block first)
-    # For simplicity, we append the new stage as YAML at the end
     with open(stages_file, "a") as f:
         f.write(f"\n  # Test stage - for running automated tests\n")
         f.write(f"  {stage_name}:\n")
@@ -601,7 +138,6 @@ def _create_stage_env_file(stage_name: str, dbms: str = "postgres") -> bool:
 
     env = os.environ.copy()
     env["ENV_FILE_SUFFIX"] = f".{stage_name}"
-    # Enable DDL mode for test stages
     if stage_name == "test" or stage_name.startswith("test_"):
         env["ENABLE_DDL"] = "1"
 
@@ -623,11 +159,8 @@ def _create_test_site(test_site: str, dbms: str = "postgres") -> bool:
     """Create test site using init_site.sh with test-specific settings."""
     app_root = get_app_root()
 
-    # Get base settings from .env
-    env_file = app_root / "ops" / "env" / ".env"
     env_dev_file = app_root / "ops" / "env" / ".env.dev"
 
-    # Build environment for test site (DDL mode - no DB_USER)
     import secrets
     import string
 
@@ -638,21 +171,19 @@ def _create_test_site(test_site: str, dbms: str = "postgres") -> bool:
         chars = string.ascii_letters + string.digits
         return ''.join(secrets.choice(chars) for _ in range(length))
 
-    # DDL mode: DB_NAME = DB_SUPER_USER (same as in init_env_files)
     db_super_user = f"test_su_{random_string()}"
 
     test_env = {
         "IQ_SITE_NAME": test_site,
-        "IQ_ADMIN_PW": "admin",  # Simple password for test site
+        "IQ_ADMIN_PW": "admin",
         "DBMS": dbms,
         "DB_HOST": "db",
         "DB_PORT": "5432" if dbms == "postgres" else "3306",
-        "DB_NAME": db_super_user,  # DDL mode: DB_NAME = DB_SUPER_USER
+        "DB_NAME": db_super_user,
         "DB_SCHEMA": f"{test_site}_schema" if dbms == "postgres" else "",
         "DB_SUPER_USER": db_super_user,
         "DB_SUPER_USER_PW": random_password(),
         "DB_ROOT_PASSWORD": os.environ.get("DB_ROOT_PASSWORD", ""),
-        # DDL mode - no separate DB_USER
         "DB_USER": "",
         "DB_PASSWORD": "",
         "REDIS_CACHE": "redis-cache:6379",
@@ -661,7 +192,6 @@ def _create_test_site(test_site: str, dbms: str = "postgres") -> bool:
         "IMAGE_USER": os.environ.get("IMAGE_USER", "{{ image_user }}"),
     }
 
-    # Load existing env vars that we need
     if env_dev_file.exists():
         with open(env_dev_file) as f:
             for line in f:
@@ -677,7 +207,6 @@ def _create_test_site(test_site: str, dbms: str = "postgres") -> bool:
     print(f"   Super User: {test_env['DB_SUPER_USER']}")
     print(f"   Mode: DDL (full privileges)")
 
-    # Run init_site.sh with test environment
     init_script = app_root / "ops" / "scripts" / "runtime" / "init_site.sh"
     if not init_script.exists():
         click.echo(f"❌ init_site.sh not found at {init_script}", err=True)
@@ -694,6 +223,10 @@ def _create_test_site(test_site: str, dbms: str = "postgres") -> bool:
 
     return result.returncode == 0
 
+
+# =============================================================================
+# Run Tests Command (requires bench/frappe)
+# =============================================================================
 
 @ops.command("run-tests")
 @click.option("-a", "--app", "app_filter", help="Run tests for a specific app")
@@ -713,17 +246,12 @@ def run_tests_cmd(context, app_filter, module, doctype, test_filter, section, co
     2. Offer to create missing components in one confirmation
     3. Run all tests defined in iq_tests and ops_tests hooks
     """
-    # Determine DBMS from environment (needed for multiple steps)
     dbms = os.environ.get("DBMS", "postgres")
     test_stage = "test"
 
-    # Determine test site name
     base_site = context.sites[0] if context.sites else os.environ.get("IQ_SITE_NAME", "{{ site_name }}")
     test_site = test_site_override if test_site_override else _get_test_site_name(base_site)
 
-    # =========================================================================
-    # Check all prerequisites and collect missing components
-    # =========================================================================
     missing = []
 
     has_stage = _test_stage_exists(test_stage)
@@ -737,9 +265,6 @@ def run_tests_cmd(context, app_filter, module, doctype, test_filter, section, co
     if not has_site:
         missing.append(f"Test site '{test_site}'")
 
-    # =========================================================================
-    # Show status and prompt for creation if needed
-    # =========================================================================
     click.echo("\n📋 Test prerequisites:")
     click.echo(f"   {'✓' if has_stage else '✗'} Stage '{test_stage}' in stages.yml")
     click.echo(f"   {'✓' if has_env else '✗'} Environment file '.env.{test_stage}'")
@@ -756,7 +281,6 @@ def run_tests_cmd(context, app_filter, module, doctype, test_filter, section, co
 
         click.echo("")
 
-        # Create missing components in order
         if not has_stage:
             if not _add_stage_to_stages_yml(test_stage, target="dev"):
                 click.echo(f"❌ Failed to add '{test_stage}' stage", err=True)
@@ -775,28 +299,23 @@ def run_tests_cmd(context, app_filter, module, doctype, test_filter, section, co
 
         click.echo("")
 
-    # Initialize frappe with test site for running tests
     frappe.init(site=test_site)
 
     click.echo(f"\n🧪 Running tests on site: {test_site}\n")
 
-    # Divider lines for better visibility
     app_divider = "\n" + "=" * 80 + "\n{:^80}\n" + "=" * 80
     section_divider = "\n" + "-" * 60 + "\n{:^60}\n" + "-" * 60
     result_divider = "\n" + "=" * 100 + "\n{:^100}\n" + "=" * 100
 
-    # Store test results for summary
     results = {"passed": [], "failed": []}
     skip_on_first_error = not continue_on_error
 
     installed_apps = frappe.get_installed_apps()
 
     for app_name in installed_apps:
-        # Skip app if filter is provided and doesn't match
         if app_filter and app_filter != app_name:
             continue
 
-        # Get tests from both iq_tests and ops_tests hooks (combine them)
         app_iq_tests = frappe.get_hooks("iq_tests", app_name=app_name) or []
         app_ops_tests = frappe.get_hooks("ops_tests", app_name=app_name) or []
         all_tests = app_iq_tests + app_ops_tests
@@ -804,15 +323,12 @@ def run_tests_cmd(context, app_filter, module, doctype, test_filter, section, co
         if not all_tests:
             continue
 
-        # Print app header with clear divider
         print(app_divider.format(f" TESTS FOR APP: {app_name.upper()} "))
 
         for test_section in all_tests:
-            # Only run specific section if requested
             if section and test_section.get("section") != section:
                 continue
 
-            # Print section header
             section_name = test_section.get("section", "Unnamed section")
             print(section_divider.format(f" SECTION: {section_name} "))
 
@@ -821,7 +337,6 @@ def run_tests_cmd(context, app_filter, module, doctype, test_filter, section, co
                 test_params = []
                 step_descriptor = ""
 
-                # Add app as first parameter
                 test_params.append(f"--app {app_name}")
 
                 if "doctype" in step:
@@ -903,7 +418,6 @@ def run_tests_cmd(context, app_filter, module, doctype, test_filter, section, co
         if skip_on_first_error and results["failed"]:
             break
 
-    # Print summary
     print(result_divider.format(" TEST RESULTS SUMMARY "))
 
     if results["passed"]:
@@ -929,7 +443,7 @@ def run_tests_cmd(context, app_filter, module, doctype, test_filter, section, co
 
 
 # =============================================================================
-# Release Dist Command
+# Release Dist Command (requires bench/frappe)
 # =============================================================================
 
 @ops.command("release-dist")
@@ -949,17 +463,14 @@ def release_dist_cmd(stage_name: Optional[str]):
         click.echo(f"🎯 Filtering hooks for stage: {stage_name}")
 
     for cleanup_task in all_cleanup_tasks:
-        # Context filter (only_during_build)
         if "context" in cleanup_task and cleanup_task["context"] == "only_during_build" and not during_build:
             continue
 
-        # Stage filter - if "stages" is defined, only run for matching stages
         task_stages = cleanup_task.get("stages")
         if task_stages and stage_name:
             if stage_name not in task_stages:
                 continue
         elif task_stages and not stage_name:
-            # If task has specific stages but no stage is provided, run it (backwards compat)
             pass
 
         if "function" in cleanup_task:
@@ -997,1327 +508,7 @@ def release_dist_cmd(stage_name: Optional[str]):
 
 
 # =============================================================================
-# Stage Configuration Helpers
-# =============================================================================
-
-def load_stages_config() -> dict:
-    """Load and parse stages.yml configuration."""
-    app_root = get_app_root()
-    stages_file = app_root / "ops" / "build" / "stages.yml"
-
-    if not stages_file.exists():
-        click.echo(f"❌ Stages configuration not found: {stages_file}")
-        sys.exit(1)
-
-    with open(stages_file) as f:
-        return yaml.safe_load(f)
-
-
-def get_stage_config(config: dict, stage_name: str) -> dict:
-    """Get resolved stage configuration (with inheritance)."""
-    stages = config.get("stages", {})
-
-    if stage_name not in stages:
-        available = ", ".join(stages.keys()) if stages else "none"
-        click.echo(f"❌ Stage '{stage_name}' not found. Available: {available}")
-        sys.exit(1)
-
-    stage = stages[stage_name].copy()
-
-    # Resolve inheritance
-    if "extends" in stage:
-        parent_name = stage["extends"]
-        parent = get_stage_config(config, parent_name)
-        # Merge parent with child (child overrides parent)
-        merged = parent.copy()
-        del stage["extends"]
-        for key, value in stage.items():
-            if key == "apps" and "apps" in merged:
-                # For apps, merge by name
-                merged_apps = {app["name"]: app for app in merged.get("apps", [])}
-                for app in value:
-                    merged_apps[app["name"]] = app
-                merged["apps"] = list(merged_apps.values())
-            elif key == "profiles" and "profiles" in merged:
-                # For profiles, use child's value (complete override)
-                merged["profiles"] = value
-            else:
-                merged[key] = value
-        stage = merged
-
-    return stage
-
-
-def get_stage_apps(config: dict, stage_name: str) -> list:
-    """Get apps for a specific stage, with ref overrides and ignores applied."""
-    base_apps = config.get("apps", [])
-    stage = get_stage_config(config, stage_name)
-    stage_app_overrides = {app["name"]: app for app in stage.get("apps", [])}
-
-    resolved_apps = []
-    for app in base_apps:
-        override = stage_app_overrides.get(app["name"], {})
-
-        # Skip ignored apps
-        if override.get("ignore", False):
-            continue
-
-        app_copy = app.copy()
-        if override:
-            app_copy.update(override)
-        resolved_apps.append(app_copy)
-
-    return resolved_apps
-
-
-def stage_has_custom_apps(config: dict, stage_name: str) -> bool:
-    """Check if a stage has customized apps (different from base)."""
-    base_apps = config.get("apps", [])
-    stage_apps = get_stage_apps(config, stage_name)
-
-    # Different number of apps
-    if len(base_apps) != len(stage_apps):
-        return True
-
-    # Check each app
-    base_by_name = {app["name"]: app for app in base_apps}
-    for stage_app in stage_apps:
-        base_app = base_by_name.get(stage_app["name"])
-        if not base_app:
-            return True
-        # Compare refs
-        if stage_app.get("ref") != base_app.get("ref"):
-            return True
-
-    return False
-
-
-def validate_stage_config(config: dict, stage_name: str) -> list[str]:
-    """Validate stage configuration. Returns list of warnings/errors."""
-    stages = config.get("stages", {})
-    raw_stage = stages.get(stage_name, {})
-    resolved_stage = get_stage_config(config, stage_name)
-    issues = []
-
-    # Check if target is missing AND stage doesn't extend another
-    # (extending stages inherit target, so no warning needed)
-    if "target" not in raw_stage and "extends" not in raw_stage:
-        issues.append(
-            f"⚠️  Stage '{stage_name}' has no 'target' defined. "
-            "Consider adding explicit target (e.g., dev, release, release-alpine)."
-        )
-
-    has_custom = stage_has_custom_apps(config, stage_name)
-    has_suffix = bool(resolved_stage.get("image_suffix"))
-
-    if has_custom and not has_suffix:
-        issues.append(
-            f"⚠️  Stage '{stage_name}' has custom apps but no image_suffix. "
-            "A separate image build requires image_suffix to be set."
-        )
-
-    return issues
-
-
-def get_compose_files(stage: dict) -> list[str]:
-    """Get compose file(s) for a stage.
-
-    Uses stage's `compose_file` property if defined, otherwise defaults to
-    compose.base.yml. All further includes are defined statically within
-    the compose file itself via the 'include:' directive.
-
-    Example stage config:
-        local:
-          compose_file: compose.stack-base.yml  # Custom entry point
-    """
-    app_root = get_app_root()
-    compose_dir = app_root / "ops" / "compose"
-
-    # Get compose file from stage config, default to compose.base.yml
-    compose_file = stage.get("compose_file", "compose.base.yml")
-    entry_file = compose_dir / compose_file
-
-    return [str(entry_file)] if entry_file.exists() else []
-
-
-def get_stages_that_extend(config: dict, stage_name: str) -> list[str]:
-    """Find all stages that extend the given stage."""
-    stages = config.get("stages", {})
-    extending = []
-    for name, stage in stages.items():
-        if stage.get("extends") == stage_name:
-            extending.append(name)
-    return extending
-
-
-def get_stage_image_name(config: dict, stage_name: str, image_prefix: str = "{{ image_prefix }}") -> str:
-    """Get the full image name for a stage.
-
-    If `image` is set in stage config, returns that (for pulling from registry).
-    Otherwise, derives from: {image_prefix}-{target}{suffix}
-    """
-    stage = get_stage_config(config, stage_name)
-
-    # If explicit image is configured, use that (registry pull)
-    if "image" in stage:
-        return stage["image"]
-
-    # Otherwise derive from target
-    target = stage.get("target", "release")
-    suffix = stage.get("image_suffix", "")
-
-    # Image name follows pattern: {prefix}-{target}{suffix}
-    # e.g., iq-dev, iq-release, iq-release-alpine, iq-release-prod
-    return f"{image_prefix}-{target}{suffix}"
-
-
-def check_image_exists(image_name: str) -> bool:
-    """Check if a Docker image exists locally."""
-    result = subprocess.run(
-        ["docker", "image", "inspect", image_name],
-        capture_output=True
-    )
-    return result.returncode == 0
-
-
-def stage_has_registry_image(config: dict, stage_name: str) -> bool:
-    """Check if stage has an explicit image configured (registry pull)."""
-    stage = get_stage_config(config, stage_name)
-    return "image" in stage
-
-
-# =============================================================================
-# Stage Commands
-# =============================================================================
-
-@ops.group()
-def stage():
-    """Stage management (environments, builds, deployments)."""
-    pass
-
-
-@stage.command("ls")
-@click.option("-v", "--verbose", is_flag=True, help="Show more details")
-def stage_ls(verbose: bool):
-    """List all defined stages."""
-    app_root = get_app_root()
-    env_dir = app_root / "ops" / "env"
-    config = load_stages_config()
-    stages = config.get("stages", {})
-
-    if not stages:
-        click.echo("No stages defined in ops/build/stages.yml")
-        return
-
-    click.echo("📦 Stages:")
-    all_issues = []
-    missing_envs = []
-
-    for name, raw_stage in stages.items():
-        resolved = get_stage_config(config, name)
-        extends = f" (extends: {raw_stage['extends']})" if "extends" in raw_stage else ""
-        target = resolved.get("target", "release")
-
-        # Check if env file exists
-        env_filename = resolved.get("env_file", ".env")
-        env_file = env_dir / env_filename
-        env_status = "✓" if env_file.exists() else "✗"
-
-        click.echo(f"  • {name}{extends} → {target}  [{env_status} {env_filename}]")
-
-        if not env_file.exists():
-            missing_envs.append((name, env_filename))
-
-        if verbose:
-            profiles = resolved.get("profiles", [])
-            if profiles:
-                click.echo(f"      profiles: {', '.join(profiles)}")
-            suffix = resolved.get("image_suffix", "")
-            if suffix:
-                click.echo(f"      image_suffix: {suffix}")
-            if stage_has_custom_apps(config, name):
-                click.echo("      apps: (customized)")
-
-        # Collect validation issues
-        all_issues.extend(validate_stage_config(config, name))
-
-    if missing_envs:
-        click.echo("")
-        click.echo("⚠️  Missing .env files:")
-        for stage_name, env_filename in missing_envs:
-            click.echo(f"   • {env_filename} → Run: bench ops stage env {stage_name}")
-
-    if all_issues:
-        click.echo("")
-        for issue in all_issues:
-            click.echo(issue)
-
-
-@stage.command("show")
-@click.argument("stage_name")
-def stage_show(stage_name: str):
-    """Show detailed configuration for a stage."""
-    config = load_stages_config()
-    stage = get_stage_config(config, stage_name)
-    apps = get_stage_apps(config, stage_name)
-    has_custom = stage_has_custom_apps(config, stage_name)
-
-    click.echo(f"📦 Stage: {stage_name}")
-    click.echo(f"   target: {stage.get('target', 'release')}")
-    click.echo(f"   env_file: {stage.get('env_file', '.env')}")
-    click.echo(f"   profiles: {', '.join(stage.get('profiles', [])) or '(none)'}")
-
-    # Image information
-    image_name = get_stage_image_name(config, stage_name)
-    has_registry = stage_has_registry_image(config, stage_name)
-    image_exists = check_image_exists(image_name)
-
-    image_source = "registry" if has_registry else "local"
-    image_status = "✓" if image_exists else "✗"
-    click.echo(f"   image: {image_name} ({image_source}) [{image_status}]")
-
-    suffix = stage.get("image_suffix", "")
-    if suffix:
-        click.echo(f"   image_suffix: {suffix}")
-
-    click.echo(f"\n📱 Apps{' (customized)' if has_custom else ''}:")
-    for app in apps:
-        source = app.get("source", "unknown")
-        ref = app.get("ref", "HEAD")
-        click.echo(f"   • {app['name']}: {source} @ {ref}")
-
-    # Show validation warnings
-    issues = validate_stage_config(config, stage_name)
-    if issues:
-        click.echo("")
-        for issue in issues:
-            click.echo(issue)
-
-
-def _check_docker_available() -> bool:
-    """Check if Docker and Docker Compose are available."""
-    try:
-        result = subprocess.run(
-            ["docker", "--version"],
-            capture_output=True,
-            text=True
-        )
-        if result.returncode != 0:
-            return False
-
-        result = subprocess.run(
-            ["docker", "compose", "version"],
-            capture_output=True,
-            text=True
-        )
-        return result.returncode == 0
-    except FileNotFoundError:
-        return False
-
-
-def parse_image_reference(image_ref: str) -> tuple[str, str]:
-    """Parse an image reference into name and tag.
-
-    Examples:
-        ghcr.io/org/repo/app:v1.0.0 -> (ghcr.io/org/repo/app, v1.0.0)
-        myapp:latest -> (myapp, latest)
-        myapp -> (myapp, latest)
-    """
-    if ":" in image_ref:
-        # Split on last colon (handles registry URLs with ports)
-        parts = image_ref.rsplit(":", 1)
-        return parts[0], parts[1]
-    return image_ref, "latest"
-
-
-def _is_stage_running(stage_name: str) -> bool:
-    """Check if a stage's containers are currently running."""
-    config = load_stages_config()
-    stage = get_stage_config(config, stage_name)
-    app_root = get_app_root()
-    compose_dir = app_root / "ops" / "compose"
-    env_dir = app_root / "ops" / "env"
-    shared_env_file = env_dir / ".env"
-    env_file_name = stage.get("env_file", ".env.dev")
-    stage_env_file = env_dir / env_file_name
-
-    compose_files = get_compose_files(stage)
-    cmd = ["docker", "compose"]
-
-    for f in compose_files:
-        cmd.extend(["-f", f])
-
-    if shared_env_file.exists():
-        cmd.extend(["--env-file", str(shared_env_file)])
-    if stage_env_file.exists():
-        cmd.extend(["--env-file", str(stage_env_file)])
-
-    cmd.extend(["ps", "-q"])
-
-    env = os.environ.copy()
-    env["STAGE_ENV_FILE"] = env_file_name
-    # Merge profiles via env var (--profile flags override COMPOSE_PROFILES in Compose v2)
-    combined_profiles = _get_combined_profiles(stage, shared_env_file, stage_env_file)
-    env["COMPOSE_PROFILES"] = ",".join(combined_profiles)
-
-    result = subprocess.run(cmd, cwd=compose_dir, env=env, capture_output=True, text=True)
-    # If there are running containers, ps -q returns their IDs
-    return bool(result.stdout.strip())
-
-
-def _get_env_value(env_file: Path, key: str) -> str | None:
-    """Read a value from an env file. Returns None if not found or file doesn't exist."""
-    if not env_file.exists():
-        return None
-    try:
-        with open(env_file) as f:
-            for line in f:
-                line = line.strip()
-                # Skip comments and empty lines
-                if not line or line.startswith('#'):
-                    continue
-                if '=' not in line:
-                    continue
-                k, v = line.split('=', 1)
-                if k.strip() == key:
-                    # Remove quotes if present
-                    v = v.strip()
-                    if (v.startswith('"') and v.endswith('"')) or (v.startswith("'") and v.endswith("'")):
-                        v = v[1:-1]
-                    return v if v else None
-    except Exception:
-        return None
-    return None
-
-
-def _get_combined_profiles(stage: dict, shared_env_file: Path, stage_env_file: Path) -> list[str]:
-    """Combine profiles from stages.yml with COMPOSE_PROFILES from env files.
-
-    Docker Compose v2 has a quirk: --profile flags OVERRIDE COMPOSE_PROFILES
-    instead of combining them. To work around this, we merge all profile sources
-    into a single list and pass them only via COMPOSE_PROFILES env var.
-
-    Supports negative profiles prefixed with '-' to exclude profiles.
-    Example: COMPOSE_PROFILES=monitoring,-redis  → adds monitoring, removes redis
-
-    Merge order:
-      1. stages.yml profiles (base)
-      2. shared .env COMPOSE_PROFILES (adds/removes)
-      3. stage .env COMPOSE_PROFILES (adds/removes)
-    """
-    profiles = set()
-    excludes = set()
-
-    # Start with profiles from stages.yml (base set)
-    for p in stage.get("profiles", []):
-        profiles.add(p)
-
-    # Layer env file profiles on top (shared first, then stage-specific)
-    for env_file in [shared_env_file, stage_env_file]:
-        env_profiles = _get_env_value(env_file, "COMPOSE_PROFILES")
-        if env_profiles:
-            for entry in env_profiles.split(","):
-                entry = entry.strip()
-                if not entry:
-                    continue
-                if entry.startswith("-"):
-                    excludes.add(entry[1:])
-                else:
-                    profiles.add(entry)
-
-    # Apply exclusions (silently ignore non-existent profiles)
-    profiles -= excludes
-
-    return sorted(profiles)
-
-
-def _save_stage_state(env_dir: Path, stage_name: str, profiles: list[str], env: dict):
-    """Save the current deployment state for a stage.
-
-    Written on every successful stage start/update so that rollback knows which
-    profiles and image tag the PREVIOUS stack was running with.
-    """
-    import json
-    from datetime import datetime
-
-    state_file = env_dir / f".stage-state.{stage_name}.json"
-    state = {
-        "timestamp": datetime.now().isoformat(),
-        "profiles": profiles,
-        "iq_image": env.get("IQ_IMAGE", ""),
-        "iq_image_tag": env.get("IQ_IMAGE_TAG", ""),
-    }
-    state_file.write_text(json.dumps(state, indent=2) + "\n")
-
-
-def _load_stage_state(env_dir: Path, stage_name: str) -> dict | None:
-    """Load the previous deployment state for a stage.
-
-    Returns None if no state file exists (first run).
-    """
-    import json
-
-    state_file = env_dir / f".stage-state.{stage_name}.json"
-    if state_file.exists():
-        try:
-            return json.loads(state_file.read_text())
-        except (json.JSONDecodeError, OSError):
-            return None
-    return None
-
-
-def _build_compose_cmd(stage: dict, compose_files: list, shared_env_file: Path, stage_env_file: Path) -> list:
-    """Build base docker compose command with files and env.
-
-    NOTE: Profiles are NOT added here as --profile flags because Docker Compose v2
-    --profile flags override COMPOSE_PROFILES from env files instead of combining.
-    Callers must set COMPOSE_PROFILES in the subprocess env via _get_combined_profiles().
-    """
-    cmd = ["docker", "compose"]
-
-    for f in compose_files:
-        cmd.extend(["-f", f])
-
-    if shared_env_file.exists():
-        cmd.extend(["--env-file", str(shared_env_file)])
-    if stage_env_file.exists():
-        cmd.extend(["--env-file", str(stage_env_file)])
-
-    return cmd
-
-
-@stage.command("run")
-@click.argument("stage_name")
-@click.option("-d", "--detach", is_flag=True, default=True, help="Run in background (default)")
-@click.option("-f", "--foreground", is_flag=True, help="Run in foreground")
-@click.option("-u", "--update", is_flag=True, help="Controlled update: tag current, migrate, rollback on failure")
-@click.option("--only-migrate", is_flag=True, help="Run only migration (init service)")
-@click.option("--only-backup", is_flag=True, help="Run only backup step")
-@click.option("--only-maintenance", is_flag=True, help="Enable maintenance mode")
-@click.option("--maintenance-off", is_flag=True, help="Disable maintenance mode")
-@click.option("--only-clear-cache", is_flag=True, help="Run only cache clearing")
-@click.option("--only-rollback", is_flag=True, help="Rollback to previously tagged images")
-@click.option("--skip-backup", is_flag=True, help="Skip backup step during update")
-@click.option("--skip-maintenance", is_flag=True, help="Skip maintenance mode during update")
-def stage_run(
-    stage_name: str,
-    detach: bool,
-    foreground: bool,
-    update: bool,
-    only_migrate: bool,
-    only_backup: bool,
-    only_maintenance: bool,
-    maintenance_off: bool,
-    only_clear_cache: bool,
-    only_rollback: bool,
-    skip_backup: bool,
-    skip_maintenance: bool,
-):
-    """Start environment for a stage.
-
-    Without --update: Starts the stack normally. Fails if already running.
-
-    With --update: Controlled update with rollback capability:
-      1. Enable maintenance mode (optional)
-      2. Stop workers and wait for jobs to complete
-      3. Create backup (optional)
-      4. Tag current running images for rollback (pre-update-TIMESTAMP)
-      5. Pull new images (if registry configured)
-      6. Run init service (waits for DB, runs migrations)
-      7. Clear caches
-      8. Start all services with new images
-      9. Verify services are healthy
-      10. Disable maintenance mode
-      On ANY failure: rollback to tagged images
-
-    Individual steps can be run with --only-* flags.
-    Steps can be skipped with --skip-* flags.
-
-    Note: This is NOT zero-downtime. There will be downtime during migration.
-    """
-    from {{app_name}}.commands.ops_update import (
-        UpdateOrchestrator,
-        create_update_context,
-    )
-
-    # Check Docker availability
-    if not _check_docker_available():
-        click.echo("❌ Docker or Docker Compose not available.", err=True)
-        click.echo("")
-        click.echo("   This command requires Docker and Docker Compose to be installed.")
-        click.echo("   If you're inside a DevContainer, use VS Code's terminal on the host instead.")
-        click.echo("")
-        click.echo("   Install Docker: https://docs.docker.com/get-docker/")
-        sys.exit(1)
-
-    config = load_stages_config()
-    stage = get_stage_config(config, stage_name)
-    app_root = get_app_root()
-    compose_dir = app_root / "ops" / "compose"
-    env_dir = app_root / "ops" / "env"
-
-    # Check image availability
-    image_name = get_stage_image_name(config, stage_name)
-    has_registry = stage_has_registry_image(config, stage_name)
-    image_exists = check_image_exists(image_name)
-
-    if not image_exists and not has_registry:
-        click.echo(f"⚠️  Image '{image_name}' not found locally.")
-        click.echo(f"   Either build it first:")
-        click.echo(f"     bench ops stage build {stage_name}")
-        click.echo(f"   Or configure a pull registry in ops/build/stages.yml:")
-        click.echo(f"     image: ghcr.io/your-org/your-repo/{image_name}:latest")
-        click.echo("")
-        if not click.confirm("Try to continue anyway?", default=False):
-            sys.exit(1)
-
-    # Determine env files (shared + stage-specific)
-    shared_env_file = env_dir / ".env"
-    env_file_name = stage.get("env_file", ".env.dev")
-    stage_env_file = env_dir / env_file_name
-
-    # Set environment for compose
-    env = os.environ.copy()
-    env["STAGE_ENV_FILE"] = env_file_name
-
-    # Image priority: .env files > stages.yml > Docker Compose default
-    # Check if IQ_IMAGE is defined in .env files (they have highest priority)
-    iq_image_from_env = (
-        _get_env_value(stage_env_file, "IQ_IMAGE") or
-        _get_env_value(shared_env_file, "IQ_IMAGE")
-    )
-
-    if not iq_image_from_env:
-        # Fallback to stages.yml: derive from 'image' or 'target'
-        if has_registry:
-            iq_image, iq_tag = parse_image_reference(stage["image"])
-        else:
-            iq_image = image_name  # From get_stage_image_name()
-            iq_tag = "latest"
-        env["IQ_IMAGE"] = iq_image
-        env["IQ_IMAGE_TAG"] = iq_tag
-
-    compose_files = get_compose_files(stage)
-    base_cmd = _build_compose_cmd(stage, compose_files, shared_env_file, stage_env_file)
-
-    # Merge profiles from stages.yml + COMPOSE_PROFILES from env files
-    combined_profiles = _get_combined_profiles(stage, shared_env_file, stage_env_file)
-    env["COMPOSE_PROFILES"] = ",".join(combined_profiles)
-
-    # Check if stack is already running
-    is_running = _is_stage_running(stage_name)
-
-    # Check for isolated step execution
-    isolated_steps = {
-        "migrate": only_migrate,
-        "backup": only_backup,
-        "maintenance": only_maintenance or maintenance_off,
-        "clear_cache": only_clear_cache,
-        "rollback": only_rollback,
-    }
-
-    running_isolated = any(isolated_steps.values())
-
-    if running_isolated:
-        # Run isolated step
-        ctx = create_update_context(
-            stage_name=stage_name,
-            stage=stage,
-            config=config,
-            app_root=app_root,
-            compose_dir=compose_dir,
-            env_dir=env_dir,
-            base_cmd=base_cmd,
-            env=env,
-            image_name=image_name,
-            has_registry=has_registry,
-            was_running=is_running,
-        )
-
-        orchestrator = UpdateOrchestrator(ctx)
-
-        # Determine which step to run
-        if only_migrate:
-            success = orchestrator.run_single_step("migrate")
-        elif only_backup:
-            success = orchestrator.run_single_step("backup")
-        elif only_maintenance or maintenance_off:
-            enable = only_maintenance and not maintenance_off
-            success = orchestrator.run_single_step("maintenance", enable=enable)
-        elif only_clear_cache:
-            success = orchestrator.run_single_step("clear_cache")
-        elif only_rollback:
-            # Load previous deployment state (profiles + tag) if available
-            previous_state = _load_stage_state(env_dir, stage_name)
-            if previous_state:
-                ctx.rollback_profiles = previous_state.get("profiles", [])
-                saved_tag = previous_state.get("iq_image_tag", "")
-                click.echo(f"📋 Previous deployment state found:")
-                click.echo(f"   Profiles: {', '.join(ctx.rollback_profiles) or '(none)'}")
-                if saved_tag:
-                    click.echo(f"   Image tag: {saved_tag}")
-            else:
-                ctx.rollback_profiles = combined_profiles
-                click.echo("⚠️  No previous deployment state found (.stage-state file missing or deleted).")
-                click.echo("   Rollback will use CURRENT profiles — this should work if profiles haven't changed.")
-                click.echo(f"   Current profiles: {', '.join(combined_profiles) or '(none)'}")
-
-            # Rollback tag: prefer ROLLBACK_TAG env var, then state file, then fail
-            rollback_tag = os.environ.get("ROLLBACK_TAG")
-            if not rollback_tag and previous_state:
-                # Use tag from state file if no explicit override
-                rollback_tag = previous_state.get("iq_image_tag", "")
-            if not rollback_tag:
-                click.echo("❌ Cannot determine rollback image tag.", err=True)
-                click.echo("   Either set ROLLBACK_TAG env var, or ensure a .stage-state file exists")
-                click.echo(f"   (created automatically on each successful 'bench ops stage run {stage_name}')")
-                sys.exit(1)
-            ctx.rollback_tag = rollback_tag
-            success = orchestrator.run_single_step("rollback")
-        else:
-            success = False
-
-        sys.exit(0 if success else 1)
-
-    # Normal flow: either start or update
-    if is_running and not update:
-        click.echo(f"❌ Stage '{stage_name}' is already running.", err=True)
-        click.echo("")
-        click.echo("   Options:")
-        click.echo(f"     bench ops stage stop {stage_name}       # Stop first, then run")
-        click.echo(f"     bench ops stage run {stage_name} --update  # Update with rollback")
-        click.echo("")
-        sys.exit(1)
-
-    if update:
-        # Load previous deployment state for rollback (profiles, image tag, etc.)
-        previous_state = _load_stage_state(env_dir, stage_name)
-        if previous_state:
-            rollback_profiles = previous_state.get("profiles", [])
-            saved_tag = previous_state.get("iq_image_tag", "")
-            click.echo(f"📋 Previous deployment state found:")
-            click.echo(f"   Profiles: {', '.join(rollback_profiles) or '(none)'}")
-            if saved_tag:
-                click.echo(f"   Image tag: {saved_tag}")
-        else:
-            # First update or no state file — fall back to current profiles.
-            # This is the same behavior as before the state-saving feature was added.
-            rollback_profiles = combined_profiles
-            click.echo("⚠️  No previous deployment state found (.stage-state file missing or deleted).")
-            click.echo("   Rollback will use CURRENT profiles — this is safe if profiles haven't changed.")
-            click.echo(f"   Current profiles: {', '.join(combined_profiles) or '(none)'}")
-            click.echo(f"   💡 A state file will be created after this update succeeds.")
-
-        # Controlled update with rollback capability using orchestrator
-        ctx = create_update_context(
-            stage_name=stage_name,
-            stage=stage,
-            config=config,
-            app_root=app_root,
-            compose_dir=compose_dir,
-            env_dir=env_dir,
-            base_cmd=base_cmd,
-            env=env,
-            image_name=image_name,
-            has_registry=has_registry,
-            was_running=is_running,
-            rollback_profiles=rollback_profiles,
-        )
-
-        orchestrator = UpdateOrchestrator(ctx)
-
-        # Configure skip options
-        # Note: Skip logic is handled within orchestrator via ctx flags if needed
-        # For now, skip options modify the step list dynamically
-
-        # After successful update, save the NEW state for future rollbacks
-        def _on_update_success(updated_env: dict):
-            _save_stage_state(env_dir, stage_name, combined_profiles, updated_env)
-
-        success = orchestrator.run_full_update(save_state_callback=_on_update_success)
-        sys.exit(0 if success else 1)
-
-    else:
-        # Normal start (no update)
-        cmd = base_cmd + ["up"]
-
-        if not foreground:
-            cmd.append("-d")
-
-        click.echo(f"🚀 Starting stage '{stage_name}'...")
-        click.echo(f"   Image: {image_name}{' (from registry)' if has_registry else ' (local)'}")
-        click.echo(f"   Compose files: {', '.join(Path(f).name for f in compose_files)}")
-        click.echo(f"   Env files: .env + {env_file_name}")
-        click.echo(f"   Profiles: {', '.join(combined_profiles) or '(none)'}")
-        click.echo(f"\n   Running: {' '.join(cmd)}\n")
-        click.echo(f"   COMPOSE_PROFILES={env.get('COMPOSE_PROFILES', '')}\n")
-
-        result = subprocess.run(cmd, cwd=compose_dir, env=env)
-
-        # Save deployment state on successful start (for future --update rollbacks)
-        if result.returncode == 0:
-            _save_stage_state(env_dir, stage_name, combined_profiles, env)
-
-        sys.exit(result.returncode)
-
-
-@stage.command("stop")
-@click.argument("stage_name")
-def stage_stop(stage_name: str):
-    """Stop environment for a stage."""
-    config = load_stages_config()
-    stage = get_stage_config(config, stage_name)
-    app_root = get_app_root()
-    compose_dir = app_root / "ops" / "compose"
-    env_dir = app_root / "ops" / "env"
-    shared_env_file = env_dir / ".env"
-    env_file_name = stage.get("env_file", ".env.dev")
-    stage_env_file = env_dir / env_file_name
-
-    compose_files = get_compose_files(stage)
-    cmd = ["docker", "compose"]
-
-    for f in compose_files:
-        cmd.extend(["-f", f])
-
-    # Load env files for COMPOSE_PROJECT_NAME
-    if shared_env_file.exists():
-        cmd.extend(["--env-file", str(shared_env_file)])
-    if stage_env_file.exists():
-        cmd.extend(["--env-file", str(stage_env_file)])
-
-    cmd.append("stop")
-
-    click.echo(f"🛑 Stopping stage '{stage_name}'...")
-    env = os.environ.copy()
-    env["STAGE_ENV_FILE"] = env_file_name
-    # Merge profiles via env var (--profile flags override COMPOSE_PROFILES in Compose v2)
-    combined_profiles = _get_combined_profiles(stage, shared_env_file, stage_env_file)
-    env["COMPOSE_PROFILES"] = ",".join(combined_profiles)
-    result = subprocess.run(cmd, cwd=compose_dir, env=env)
-    sys.exit(result.returncode)
-
-
-@stage.command("clean")
-@click.argument("stage_name")
-@click.option("-v", "--volumes", is_flag=True, help="Also remove volumes")
-def stage_clean(stage_name: str, volumes: bool):
-    """Clean up environment for a stage (remove containers)."""
-    config = load_stages_config()
-    stage = get_stage_config(config, stage_name)
-    app_root = get_app_root()
-    compose_dir = app_root / "ops" / "compose"
-    env_dir = app_root / "ops" / "env"
-    shared_env_file = env_dir / ".env"
-    env_file_name = stage.get("env_file", ".env.dev")
-    stage_env_file = env_dir / env_file_name
-
-    compose_files = get_compose_files(stage)
-    cmd = ["docker", "compose"]
-
-    for f in compose_files:
-        cmd.extend(["-f", f])
-
-    # Load env files for COMPOSE_PROJECT_NAME
-    if shared_env_file.exists():
-        cmd.extend(["--env-file", str(shared_env_file)])
-    if stage_env_file.exists():
-        cmd.extend(["--env-file", str(stage_env_file)])
-
-    cmd.append("down")
-
-    if volumes:
-        # Always confirm before deleting volumes
-        if not click.confirm(
-            f"⚠️  This will delete all volumes for stage '{stage_name}'. Continue?",
-            default=False
-        ):
-            click.echo("Aborted.")
-            sys.exit(0)
-        cmd.append("-v")
-
-    click.echo(f"🧹 Cleaning stage '{stage_name}'...")
-    env = os.environ.copy()
-    env["STAGE_ENV_FILE"] = env_file_name
-    # Merge profiles via env var (--profile flags override COMPOSE_PROFILES in Compose v2)
-    combined_profiles = _get_combined_profiles(stage, shared_env_file, stage_env_file)
-    env["COMPOSE_PROFILES"] = ",".join(combined_profiles)
-    result = subprocess.run(cmd, cwd=compose_dir, env=env)
-    sys.exit(result.returncode)
-
-
-@stage.command("env")
-@click.argument("stage_name")
-@click.option("-f", "--force", is_flag=True, help="Overwrite existing .env file")
-def stage_env(stage_name: str, force: bool):
-    """Create .env file for a stage."""
-    config = load_stages_config()
-    stage = get_stage_config(config, stage_name)
-    app_root = get_app_root()
-    env_dir = app_root / "ops" / "env"
-
-    env_filename = stage.get("env_file", f".env.{stage_name}")
-    env_file = env_dir / env_filename
-
-    if env_file.exists() and not force:
-        click.echo(f"⚠️  {env_filename} already exists. Use -f to overwrite.")
-        sys.exit(1)
-
-    # Use init_env_files script to generate env with unique credentials
-    init_script = app_root / "ops" / "scripts" / "devcontainer" / "init_env_files"
-
-    if not init_script.exists():
-        click.echo(f"❌ Script not found: {init_script}")
-        sys.exit(1)
-
-    # Delete existing file if force is set (so script creates fresh one)
-    if env_file.exists() and force:
-        env_file.unlink()
-
-    # Determine suffix from env_filename (e.g., ".env.staging" -> ".staging")
-    if env_filename.startswith(".env"):
-        suffix = env_filename[4:]  # Remove ".env" prefix
-    else:
-        suffix = ""
-
-    click.echo(f"🔧 Creating {env_filename}...")
-    result = subprocess.run(
-        ["bash", str(init_script)],
-        cwd=app_root,
-        env={**os.environ, "ENV_FILE_SUFFIX": suffix}
-    )
-
-    if result.returncode == 0 and env_file.exists():
-        click.echo(f"✅ Created {env_filename} with fresh credentials")
-    else:
-        click.echo(f"❌ Failed to create {env_filename}")
-        sys.exit(1)
-
-
-@stage.command("build")
-@click.argument("stage_name")
-@click.option("-p", "--push", is_flag=True, help="Push images after building")
-@click.option("-f", "--force", is_flag=True, help="Force rebuild")
-def stage_build(stage_name: str, push: bool, force: bool):
-    """Build Docker images for a stage."""
-    config = load_stages_config()
-    stage = get_stage_config(config, stage_name)
-    apps = get_stage_apps(config, stage_name)
-    app_root = get_app_root()
-    has_custom = stage_has_custom_apps(config, stage_name)
-
-    # Get target from stage config (defaults applied in get_stage_config)
-    target = stage.get("target", "release")
-    image_suffix = stage.get("image_suffix", "")
-    image_name = get_stage_image_name(config, stage_name)
-
-    # Validate configuration
-    issues = validate_stage_config(config, stage_name)
-    if issues:
-        for issue in issues:
-            click.echo(issue)
-        if has_custom and not image_suffix:
-            click.echo("\n❌ Cannot build: stage has custom apps but no image_suffix.")
-            click.echo("   Set image_suffix in stages.yml to create a distinct image.")
-            sys.exit(1)
-
-    click.echo(f"🔨 Building images for stage '{stage_name}'...")
-    click.echo(f"   target: {target}")
-    click.echo(f"   image: {image_name}")
-    if has_custom:
-        click.echo("   apps: (customized)")
-
-    # Extract Frappe ref and custom apps from stage definition
-    # The main app ({{ app_name }}) is copied via COPY in Dockerfile, so it's not in CUSTOM_APPS
-    # All other apps are passed via CUSTOM_APPS in format: url#ref or /local/path
-    frappe_ref = None
-    custom_apps = []
-
-    click.echo("\n📱 Apps:")
-    for app in apps:
-        source = app.get("source", "local")
-        ref = app.get("ref", "HEAD")
-        click.echo(f"     • {app['name']}: {source} @ {ref}")
-
-        if app["name"] == "frappe":
-            # Frappe is handled separately via FRAPPE_REF
-            frappe_ref = ref
-        elif app["name"] == "{{ app_name }}":
-            # Main app is copied via COPY in Dockerfile, not via CUSTOM_APPS
-            pass
-        else:
-            # All other apps go into CUSTOM_APPS
-            if source == "local":
-                # Local path (must exist in container at build time)
-                app_spec = f"/opt/apps/{app['name']}"
-            else:
-                # Remote URL with optional ref
-                app_spec = source
-                if ref and ref != "HEAD":
-                    app_spec += f"#{ref}"
-            custom_apps.append(app_spec)
-
-    # Build command using baker
-    settings = app_root / "ops" / "build" / "build-settings.yml"
-
-    if not settings.exists():
-        click.echo(f"\n❌ Build settings not found: {settings}")
-        sys.exit(1)
-
-    cmd = [sys.executable, "-m", "baker_cli", "build", "--settings", str(settings)]
-    cmd.extend(["--targets", target])
-
-    if push:
-        cmd.append("--push")
-    if force:
-        # baker-cli --force expects target name to force rebuild
-        cmd.extend(["--force", target])
-
-    # Build args for the Docker build
-    # These are passed as environment variables which Dockerfile ARGs pick up
-    env = os.environ.copy()
-    env["STAGE_NAME"] = stage_name
-    env["IMAGE_SUFFIX"] = image_suffix
-
-    # Production build for release targets, development for dev target
-    is_production = target != "dev"
-    env["PRODUCTION_BUILD"] = "true" if is_production else "false"
-
-    if frappe_ref:
-        env["FRAPPE_REF"] = frappe_ref
-        click.echo(f"\n   FRAPPE_REF: {frappe_ref}")
-
-    if custom_apps:
-        env["CUSTOM_APPS"] = ",".join(custom_apps)
-        click.echo(f"   CUSTOM_APPS: {env['CUSTOM_APPS']}")
-
-    click.echo(f"   PRODUCTION_BUILD: {env['PRODUCTION_BUILD']}")
-
-    click.echo(f"\n   Running: {' '.join(cmd)}\n")
-    result = subprocess.run(cmd, cwd=app_root, env=env)
-    sys.exit(result.returncode)
-
-
-@stage.command("add")
-@click.argument("stage_name")
-@click.option("-e", "--extends", "extends_stage", help="Stage to extend from")
-@click.option("-t", "--target", "target_name", help="Build target (dev, release, release-alpine, ...)")
-def stage_add(stage_name: str, extends_stage: Optional[str], target_name: Optional[str]):
-    """Add a new stage."""
-    config = load_stages_config()
-    stages = config.get("stages", {})
-
-    if stage_name in stages:
-        click.echo(f"❌ Stage '{stage_name}' already exists.")
-        sys.exit(1)
-
-    # Ask if it should extend another stage
-    if extends_stage is None:
-        existing_stages = list(stages.keys())
-        if existing_stages:
-            click.echo(f"Available stages to extend: {', '.join(existing_stages)}")
-            extends_stage = click.prompt(
-                "Extend from stage (leave empty for standalone)",
-                default="",
-                show_default=False
-            )
-            if extends_stage and extends_stage not in stages:
-                click.echo(f"❌ Stage '{extends_stage}' not found.")
-                sys.exit(1)
-
-    # Determine target - inherited from parent or must be specified
-    if extends_stage:
-        # Will inherit target from parent, no need to specify
-        pass
-    elif target_name is None:
-        # Standalone stage needs explicit target
-        target_name = click.prompt(
-            "Build target (e.g., dev, release, release-alpine)",
-            default="release"
-        )
-
-    # Create new stage configuration
-    new_stage = {
-        "env_file": f".env.{stage_name}",
-        "profiles": [],
-        "image_suffix": f"-{stage_name}"
-    }
-
-    # Add target only for standalone stages (extending stages inherit it)
-    if not extends_stage and target_name:
-        new_stage["target"] = target_name
-
-    if extends_stage:
-        new_stage = {"extends": extends_stage, **new_stage}
-
-    # Update the config file
-    app_root = get_app_root()
-    stages_file = app_root / "ops" / "build" / "stages.yml"
-
-    config["stages"][stage_name] = new_stage
-
-    with open(stages_file, "w") as f:
-        yaml.dump(config, f, default_flow_style=False, sort_keys=False)
-
-    click.echo(f"✅ Added stage '{stage_name}'")
-
-    # Create env file using init_env_files script (generates unique credentials)
-    env_dir = app_root / "ops" / "env"
-    env_file = env_dir / f".env.{stage_name}"
-
-    if not env_file.exists():
-        if click.confirm(f"Create {env_file.name} with fresh credentials?", default=True):
-            # Use init_env_files script to generate env with unique credentials
-            init_script = app_root / "ops" / "scripts" / "devcontainer" / "init_env_files"
-
-            if init_script.exists():
-                result = subprocess.run(
-                    ["bash", str(init_script)],
-                    cwd=app_root,
-                    env={**os.environ, "ENV_FILE_SUFFIX": f".{stage_name}"}
-                )
-                if env_file.exists():
-                    click.echo(f"✅ Created {env_file.name} with fresh credentials")
-                else:
-                    click.echo(f"⚠️  Script ran but {env_file.name} was not created")
-            else:
-                click.echo(f"⚠️  Script not found: {init_script}")
-                env_file.touch()
-                click.echo(f"✅ Created empty {env_file.name}")
-
-
-@stage.command("rm")
-@click.argument("stage_name")
-@click.option("-y", "--yes", is_flag=True, help="Skip confirmation prompts")
-@click.option("-n", "--no", "no_delete_env", is_flag=True, help="Don't delete .env file")
-def stage_rm(stage_name: str, yes: bool, no_delete_env: bool):
-    """Remove a stage."""
-    config = load_stages_config()
-    stages = config.get("stages", {})
-
-    if stage_name not in stages:
-        available = ", ".join(stages.keys()) if stages else "none"
-        click.echo(f"❌ Stage '{stage_name}' not found. Available: {available}")
-        sys.exit(1)
-
-    # Check if other stages extend this one
-    extending = get_stages_that_extend(config, stage_name)
-    if extending:
-        click.echo(f"❌ Cannot remove stage '{stage_name}'.")
-        click.echo(f"   The following stages extend it: {', '.join(extending)}")
-        click.echo("   Remove or modify those stages first.")
-        sys.exit(1)
-
-    if not yes:
-        if not click.confirm(f"Remove stage '{stage_name}'?"):
-            click.echo("Cancelled.")
-            return
-
-    # Get env file before removing stage
-    stage = stages[stage_name]
-    env_filename = stage.get("env_file", f".env.{stage_name}")
-
-    # Remove stage from config
-    del config["stages"][stage_name]
-
-    app_root = get_app_root()
-    stages_file = app_root / "ops" / "build" / "stages.yml"
-
-    with open(stages_file, "w") as f:
-        yaml.dump(config, f, default_flow_style=False, sort_keys=False)
-
-    click.echo(f"✅ Removed stage '{stage_name}'")
-
-    # Handle env file deletion
-    env_dir = app_root / "ops" / "env"
-    env_file = env_dir / env_filename
-
-    if env_file.exists() and env_filename != ".env":  # Don't delete base .env
-        if no_delete_env:
-            click.echo(f"   Kept {env_file.name}")
-        elif yes or click.confirm(f"Delete {env_file.name}?", default=False):
-            env_file.unlink()
-            click.echo(f"✅ Deleted {env_file.name}")
-        else:
-            click.echo(f"   Kept {env_file.name}")
-
-
-# =============================================================================
-# Trivy CVE Scanning Command
-# =============================================================================
-
-def _docker_socket_available() -> bool:
-    """Check if the Docker socket is accessible (needed for trivy container scanning)."""
-    import socket as sock
-    docker_sock = "/var/run/docker.sock"
-    if not os.path.exists(docker_sock):
-        return False
-    try:
-        s = sock.socket(sock.AF_UNIX, sock.SOCK_STREAM)
-        s.connect(docker_sock)
-        s.close()
-        return True
-    except (PermissionError, ConnectionRefusedError, OSError):
-        return False
-
-
-def _get_stage_image_with_tag(config: dict, stage_name: str) -> str:
-    """Resolve full image:tag for a stage, following the env > stages.yml > default priority."""
-    stage = get_stage_config(config, stage_name)
-    app_root = get_app_root()
-    env_dir = app_root / "ops" / "env"
-    shared_env_file = env_dir / ".env"
-    env_file_name = stage.get("env_file", f".env.{stage_name}")
-    stage_env_file = env_dir / env_file_name
-
-    # Priority: .env files > stages.yml > default
-    iq_image = (
-        _get_env_value(stage_env_file, "IQ_IMAGE") or
-        _get_env_value(shared_env_file, "IQ_IMAGE")
-    )
-    iq_tag = (
-        _get_env_value(stage_env_file, "IQ_IMAGE_TAG") or
-        _get_env_value(shared_env_file, "IQ_IMAGE_TAG")
-    )
-
-    if iq_image:
-        return f"{iq_image}:{iq_tag}" if iq_tag else iq_image
-
-    # Fallback to stages.yml
-    if "image" in stage:
-        return stage["image"]
-
-    # Derive from target
-    image_name = get_stage_image_name(config, stage_name)
-
-    # Try to get tag from VERSION file
-    version_file = app_root / "ops" / "build" / "VERSION"
-    tag = version_file.read_text().strip() if version_file.exists() else "latest"
-
-    return f"{image_name}:{tag}"
-
-
-@ops.command("trivy")
-@click.argument("stage_name")
-@click.option("-s", "--severity", default="HIGH,CRITICAL", help="Severity filter (default: HIGH,CRITICAL)")
-@click.option("--full", is_flag=True, help="Show all severities (no filter)")
-@click.option("-f", "--format", "output_format", default="table",
-              type=click.Choice(["table", "json", "sarif"]), help="Output format")
-@click.option("-o", "--output", "output_file", help="Write results to file")
-@click.option("--exit-code", "exit_code", type=int, default=None,
-              help="Exit code when vulnerabilities found (e.g., 1 for CI)")
-def trivy_scan(stage_name: str, severity: str, full: bool, output_format: str,
-               output_file: str, exit_code: int):
-    """Scan a stage's Docker image for CVEs using Trivy.
-
-    Runs Trivy as a Docker container to scan the image associated with the
-    given stage. If Docker is not accessible (e.g., inside a DevContainer
-    without socket mount), the command prints the ready-to-use docker command.
-
-    Examples:
-        bench ops trivy local                    # Scan local stage image
-        bench ops trivy local --full             # Show all severities
-        bench ops trivy prod -f json -o report   # JSON report to file
-        bench ops trivy local --exit-code 1      # Fail if vulns found (CI)
-    """
-    config = load_stages_config()
-
-    # Validate stage exists
-    stages = config.get("stages", {})
-    if stage_name not in stages:
-        available = ", ".join(stages.keys()) if stages else "none"
-        click.echo(f"❌ Stage '{stage_name}' not found. Available: {available}")
-        sys.exit(1)
-
-    # Resolve the image to scan
-    image_ref = _get_stage_image_with_tag(config, stage_name)
-    click.echo(f"🔍 Trivy CVE scan for stage '{stage_name}'")
-    click.echo(f"   Image: {image_ref}")
-    click.echo("")
-
-    # Build the trivy docker command
-    trivy_cmd = ["docker", "run", "--rm"]
-
-    # Mount Docker socket so trivy can access local images
-    trivy_cmd.extend(["-v", "/var/run/docker.sock:/var/run/docker.sock"])
-
-    # If output file is requested, mount a volume for it
-    if output_file:
-        output_dir = os.path.abspath(os.path.dirname(output_file) or ".")
-        output_name = os.path.basename(output_file)
-        trivy_cmd.extend(["-v", f"{output_dir}:/output"])
-
-    trivy_cmd.append("aquasec/trivy")
-    trivy_cmd.extend(["image"])
-
-    # Severity filter
-    if not full:
-        trivy_cmd.extend(["--severity", severity])
-
-    # Output format
-    trivy_cmd.extend(["--format", output_format])
-
-    # Output file
-    if output_file:
-        trivy_cmd.extend(["--output", f"/output/{output_name}"])
-
-    # Exit code
-    if exit_code is not None:
-        trivy_cmd.extend(["--exit-code", str(exit_code)])
-
-    # The image to scan
-    trivy_cmd.append(image_ref)
-
-    # Check if Docker is available and socket is accessible
-    has_docker = _check_docker_available()
-    has_socket = _docker_socket_available()
-
-    if has_docker and has_socket:
-        # Run trivy directly
-        click.echo(f"   Running: {' '.join(trivy_cmd)}\n")
-        result = subprocess.run(trivy_cmd)
-        if output_file and result.returncode == 0:
-            click.echo(f"\n📄 Report written to: {output_file}")
-        sys.exit(result.returncode)
-    else:
-        # Cannot run trivy - show the command for manual execution
-        cmd_str = " \\\n    ".join(trivy_cmd)
-
-        if not has_docker:
-            click.echo("ℹ️  Docker is not available in this environment.")
-        elif not has_socket:
-            click.echo("ℹ️  Docker socket (/var/run/docker.sock) is not accessible.")
-            click.echo("   Inside a DevContainer, you can mount it by adding to devcontainer.json:")
-            click.echo("")
-            click.echo('   "mounts": [')
-            click.echo('     "source=/var/run/docker.sock,target=/var/run/docker.sock,type=bind"')
-            click.echo('   ]')
-
-        click.echo("")
-        click.echo("   Run the following command from a host terminal with Docker access:")
-        click.echo("")
-        click.echo(f"   {cmd_str}")
-        click.echo("")
-
-        # Also show a simpler version without socket mount if the image is in a registry
-        if "/" in image_ref:
-            # Image seems to be a registry reference - trivy can pull it directly
-            simple_cmd = ["docker", "run", "--rm", "aquasec/trivy", "image"]
-            if not full:
-                simple_cmd.extend(["--severity", severity])
-            simple_cmd.extend(["--format", output_format])
-            if exit_code is not None:
-                simple_cmd.extend(["--exit-code", str(exit_code)])
-            simple_cmd.append(image_ref)
-            click.echo("   Or, if the image is accessible from a registry (no socket needed):")
-            click.echo(f"   {' '.join(simple_cmd)}")
-            click.echo("")
-
-        sys.exit(0)
-
-
-# =============================================================================
-# Export commands for Frappe
+# Export for Frappe (bench_helper.get_app_commands reads this list)
 # =============================================================================
 
 commands = [ops]
