@@ -119,6 +119,7 @@ def update_cmd(dry: bool, recopy: bool):
     if not answers_file.exists():
         answers_file = app_root / ".copier-answers.yml"
 
+    # Use recopy for dirty repos, update for clean repos
     copier_cmd = "recopy" if recopy else "update"
     cmd = ["copier", copier_cmd, "--trust", "--defaults"]
 
