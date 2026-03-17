@@ -52,6 +52,7 @@ The `ops` CLI can be used standalone (without bench/frappe) or via `bench ops`.
 python3.12 -m venv env
 source env/bin/activate
 bash ops/scripts/install_ops.sh --build   # Installs ops CLI + baker-cli
+ops dockerfile create                     # Generate Dockerfiles from templates
 ops build -t dev                          # Build dev image
 ```
 
