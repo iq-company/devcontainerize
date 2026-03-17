@@ -123,6 +123,7 @@ def update_cmd(dry: bool, recopy: bool):
     cmd = ["copier", copier_cmd, "--trust", "--defaults"]
 
     if answers_file.exists():
+        # copier requires relative path for answers-file
         relative_answers = answers_file.relative_to(app_root)
         cmd.extend(["--answers-file", str(relative_answers)])
 
