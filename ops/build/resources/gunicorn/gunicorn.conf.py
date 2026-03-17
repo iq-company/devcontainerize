@@ -10,6 +10,10 @@ graceful_timeout = int(os.environ.get("GUNICORN_GRACEFUL_TIMEOUT", 120))
 preload_app = True
 
 # Heartbeat temp dir — /dev/shm is ideal (RAM-based, fast).
+# On Kubernetes/OpenShift /dev/shm may be too small (64 MB default) or
+# read-only, causing heartbeat failures → WORKER TIMEOUT errors.
+# Fix: Mount an emptyDir{medium: Memory} at /dev/shm in the pod spec,
+#      or override with GUNICORN_WORKER_TMP_DIR=/tmp
 worker_tmp_dir = os.environ.get("GUNICORN_WORKER_TMP_DIR", "/dev/shm")
 
 CERT_DIR = "/srv/cert"
