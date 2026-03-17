@@ -20,7 +20,7 @@ def main():
         return
 
     dst_path = Path(sys.argv[1])
-    variant = sys.argv[2] if len(sys.argv) > 2 else "debian"
+    cli_variant = sys.argv[2] if len(sys.argv) > 2 else None
 
     settings_file = dst_path / "ops" / "build" / "build-settings.yml"
     docker_dir = dst_path / "ops" / "build" / "docker"
@@ -30,11 +30,22 @@ def main():
         print(f"[skip] gen_dockerfiles.py: Settings file not found: {settings_file}")
         return
 
+    # Resolve variant: CLI arg > build-settings.yml > fallback
+    variant = cli_variant or "debian"
+    if not cli_variant:
+        try:
+            import yaml
+            with open(settings_file) as f:
+                settings = yaml.safe_load(f) or {}
+            variant = settings.get("dockerfile_settings", {}).get("variant", "debian")
+        except Exception:
+            pass
+
     # Check if Dockerfiles already exist (skip regeneration on update)
     existing_dockerfiles = list(docker_dir.glob("Dockerfile.*"))
     if existing_dockerfiles and "--force" not in sys.argv:
         print(f"[ok] Dockerfiles already exist in {docker_dir.name}/")
-        print("     Run 'bench ops dockerfile update' to regenerate")
+        print("     Run 'ops dockerfile update' to regenerate")
         return
 
     # Try to run baker gen-docker
