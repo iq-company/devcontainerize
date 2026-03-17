@@ -67,7 +67,7 @@ def mkdocs_build():
 
 
 def preprocess_mkdocs():
-	if os.environ.get("LOCAL_DEV_ENV") == "true":
+	if os.environ.get("DEV_CONTAINER") == "1":
 		if not shutil.which("mkdocs"):
 			print("Installing mkdocs...")
 			os.system("pip install mkdocs-material")

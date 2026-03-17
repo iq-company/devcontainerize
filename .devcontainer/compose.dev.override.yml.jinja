@@ -48,7 +48,7 @@ services:
   # This init service REPLACES the one from compose.init.migrate.yml when
   # compose.dev.override.yml is loaded. Key differences:
   # - Uses backend_defaults anchor → gets apps + vscode-host volumes
-  # - DEV_CONTAINER=1 via environment → init_site.sh knows it's in DevContainer
+  # - DEV_CONTAINER=1 from .env.dev via env_file → init_site.sh knows it's in DevContainer
   #
   # IMPORTANT: The entrypoint prepends /usr/local/bin to PATH so that the
   # IMAGE's runtime scripts are used, not potentially stale copies from the
@@ -64,8 +64,6 @@ services:
       - -c
       # Prepend /usr/local/bin so image scripts take precedence over stale volume copies
       - "export PATH=/usr/local/bin:$$PATH; exec init_site.sh"
-    environment:
-      DEV_CONTAINER: "1"
 
   app:
     <<: *backend_defaults

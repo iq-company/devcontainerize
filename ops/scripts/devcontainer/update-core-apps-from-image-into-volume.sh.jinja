@@ -1,13 +1,16 @@
 #!/bin/bash
 set -e
 
-# Load env vars (shared + dev stage)
+# Load env vars (shared + dev stage) for COMPOSE_PROJECT_NAME, IQ_IMAGE,
+# HOST_UID, HOST_GID, etc.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/../common/load_env.sh"
 
 VOLUME_NAME="${COMPOSE_PROJECT_NAME}_apps"
 IMAGE_TAG="${IQ_IMAGE}:${IQ_IMAGE_TAG}"
 TMP_CONTAINER="core-update-temp"
+TARGET_UID="${HOST_UID:-1000}"
+TARGET_GID="${HOST_GID:-1000}"
 
 echo "Checking if volume exists..."
 if ! docker volume inspect "$VOLUME_NAME" >/dev/null 2>&1; then
@@ -15,8 +18,12 @@ if ! docker volume inspect "$VOLUME_NAME" >/dev/null 2>&1; then
 	exit 1
 fi
 
-echo "Creating temporary container from image $IMAGE_TAG..."
+echo "Updating frappe from image $IMAGE_TAG..."
+echo "  Volume owner: UID:GID = $TARGET_UID:$TARGET_GID"
 docker run --rm --name "$TMP_CONTAINER" \
+	--user root \
+	-e "TARGET_UID=${TARGET_UID}" \
+	-e "TARGET_GID=${TARGET_GID}" \
 	-v "$VOLUME_NAME":/mnt/apps \
 	"$IMAGE_TAG" \
 	bash -c '
@@ -24,11 +31,14 @@ docker run --rm --name "$TMP_CONTAINER" \
 	  TARGET="/mnt/apps/frappe"
 	  SOURCE="/home/{{ image_user }}/bench/apps/frappe"
 
-	  echo "Removing old frappe in volume (if exists)..."
+	  echo "Removing old frappe in volume..."
 	  rm -rf "$TARGET"
 
 	  echo "Copying new frappe from image..."
 	  cp -a "$SOURCE" "$TARGET"
+
+	  echo "Fixing ownership to ${TARGET_UID}:${TARGET_GID}..."
+	  chown -R "${TARGET_UID}:${TARGET_GID}" "$TARGET"
 	'
 
-echo "✅ Updated Core App from Image in volume $VOLUME_NAME."
+echo "Updated Core App from Image in volume $VOLUME_NAME."

@@ -9,12 +9,12 @@
 		{
 			"label": "Remove Volumes",
 			"type": "shell",
-			"command": "source ops/compose/.env && docker volume ls --filter \"label=com.docker.compose.project=${COMPOSE_PROJECT_NAME}\" --format \"{{ '{{' }}.Name{{ '}}' }}\" | xargs docker volume rm"
+			"command": "source ops/compose/.env && echo \"⚠ This will DELETE all volumes for project: ${COMPOSE_PROJECT_NAME} (DB + apps data!)\" && read -p 'Are you sure? [y/N] ' confirm && [[ $confirm == [yY] ]] && docker volume ls --filter \"label=com.docker.compose.project=${COMPOSE_PROJECT_NAME}\" --format \"{{ '{{' }}.Name{{ '}}' }}\" | xargs docker volume rm || echo 'Aborted.'"
 		},
 		{
 			"label": "Remove Containers and Volumes",
 			"type": "shell",
-			"command": "source ops/compose/.env && docker ps -a --filter \"label=com.docker.compose.project=${COMPOSE_PROJECT_NAME}\" --format \"{{ '{{' }}.ID{{ '}}' }}\" | xargs docker rm -f && docker volume ls --filter \"label=com.docker.compose.project=${COMPOSE_PROJECT_NAME}\" --format \"{{ '{{' }}.Name{{ '}}' }}\" | xargs docker volume rm"
+			"command": "source ops/compose/.env && echo \"⚠ This will REMOVE all containers AND DELETE all volumes for project: ${COMPOSE_PROJECT_NAME}\" && echo '  This includes the database, sites and apps volumes!' && read -p 'Are you sure? [y/N] ' confirm && [[ $confirm == [yY] ]] && docker ps -a --filter \"label=com.docker.compose.project=${COMPOSE_PROJECT_NAME}\" --format \"{{ '{{' }}.ID{{ '}}' }}\" | xargs docker rm -f && docker volume ls --filter \"label=com.docker.compose.project=${COMPOSE_PROJECT_NAME}\" --format \"{{ '{{' }}.Name{{ '}}' }}\" | xargs docker volume rm || echo 'Aborted.'"
 		},
 		{
 			"label": "Update Core App from Image into Volume",
