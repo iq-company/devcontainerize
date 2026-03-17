@@ -88,7 +88,7 @@ default_variant:
 alpine_version:
   type: str
   default: "3.21"
-  when: false
+  when: "{{ default_variant == 'alpine' }}"
   help: "Alpine Linux version (only relevant for alpine variant)"
 
 _tasks:
@@ -98,7 +98,7 @@ _tasks:
   - "python3 \"{{ _copier_conf.src_path }}/ops/copier/patch_pyproject_toml.py\" \"{{ _copier_conf.dst_path }}\" {{ feature_image_creation }}"
   - "python3 \"{{ _copier_conf.src_path }}/ops/copier/move_copier_answers.py\" \"{{ _copier_conf.dst_path }}\""
   - "python3 \"{{ _copier_conf.src_path }}/ops/copier/init_dev_stage.py\" \"{{ _copier_conf.dst_path }}\" {{ image_prefix }} {{ default_dbms }}"
-  - "python3 \"{{ _copier_conf.src_path }}/ops/copier/gen_dockerfiles.py\" \"{{ _copier_conf.dst_path }}\""
+  - "python3 \"{{ _copier_conf.src_path }}/ops/copier/gen_dockerfiles.py\" \"{{ _copier_conf.dst_path }}\" {{ default_variant }}"
 
 _skip_if_exists:
   - "{{ app_name }}/commands/__init__.py"
