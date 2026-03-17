@@ -29,7 +29,7 @@ recipes_dir: ops/build/docker-templates/recipes
 # Active Dockerfile generation settings (auto-saved by bench ops dockerfile)
 # These persist your last explicit choices so subsequent calls use the same settings.
 dockerfile_settings:
-  variant: debian
+  variant: {{ default_variant }}
 
 # Default values for Dockerfile templates (can be overridden via --set)
 # Note: Project-specific values (app_name, image_user, etc.) are automatically
