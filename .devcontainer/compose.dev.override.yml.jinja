@@ -50,12 +50,11 @@ services:
   # - Uses backend_defaults anchor → gets apps + vscode-host volumes
   # - DEV_CONTAINER=1 via environment → init_site.sh knows it's in DevContainer
   #
-  # No {{ app_name }} bind mount here! The init service uses the image's apps
-  # (with node_modules already built). The bind mount in the app service
-  # (devcontainer.json) is for live editing only.
-  #
-  # No depends_on here - init_site.sh uses wait-for-it to check DB/Redis
-  # availability (works for both container and external services).
+  # IMPORTANT: The entrypoint prepends /usr/local/bin to PATH so that the
+  # IMAGE's runtime scripts are used, not potentially stale copies from the
+  # apps volume. Docker named volumes are only populated on first create —
+  # after image rebuilds, the volume keeps its old content and would shadow
+  # newer scripts from the image.
   # ---------------------------------------------------------------------------
   init:
     <<: *backend_defaults
