@@ -10,6 +10,17 @@
 
 ARG BASE_IMAGE_SOURCE
 ARG DEV_IMAGE_SOURCE
+{% endraw %}{% if feature_mkdocs %}{% raw %}
+
+# Stage: Build documentation (throwaway — only dist/ is extracted)
+FROM ${DEV_IMAGE_SOURCE:-{{ defaults.image_prefix }}-dev} AS docs
+ARG IMAGE_USER={{ defaults.image_user }}
+ARG IQ_BRAND_NAME
+USER ${IMAGE_USER}
+WORKDIR /home/${IMAGE_USER}/bench
+RUN /home/${IMAGE_USER}/bench/env/bin/pip install --no-cache-dir mkdocs-material && \
+    IQ_BRAND_NAME="${IQ_BRAND_NAME}" bench mkdocs-build
+{% endraw %}{% endif %}{% raw %}
 
 # Stage 1: Cleaning stage
 FROM ${DEV_IMAGE_SOURCE:-{{ defaults.image_prefix }}-dev} AS cleaner
@@ -49,6 +60,10 @@ COPY --from=cleaner /lib/x86_64-linux-gnu/libpq.so* /lib/x86_64-linux-gnu/
 
 # Copy only the cleaned files from the cleaner stage
 COPY --from=cleaner --chown=${IMAGE_USER}:${IMAGE_GROUP} /home/${IMAGE_USER}/bench /home/${IMAGE_USER}/bench
+{% endraw %}{% if feature_mkdocs %}{% raw %}
+# Overlay pre-built documentation (from throwaway docs stage — zero pip residue)
+COPY --from=docs --chown=${IMAGE_USER}:${IMAGE_GROUP} /home/${IMAGE_USER}/bench/apps/{{ defaults.app_name }}/{{ defaults.app_name }}/mkdocs/dist /home/${IMAGE_USER}/bench/apps/{{ defaults.app_name }}/{{ defaults.app_name }}/mkdocs/dist
+{% endraw %}{% endif %}{% raw %}
 {% if base_variant == "debian" %}
 # Debian: Copy compiled nginx and pcre2
 COPY --from=cleaner --chown=${IMAGE_USER}:${IMAGE_GROUP} /opt/nginx/ /opt/nginx/
