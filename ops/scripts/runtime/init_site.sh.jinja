@@ -47,6 +47,25 @@ source "${BENCH_DIR}/env/bin/activate"
 DB_SCHEMA=${DB_SCHEMA:-iq_schema}
 APPS_DIR="${BENCH_DIR}/apps"
 
+# =============================================================================
+# Helper: clear stale document lock files before migration
+# =============================================================================
+# Frappe uses file-based locks (sites/<site>/locks/*.lock) when a document s
+# on_update() calls queue_action(). The background worker removes the lock
+# after executing the action. In the init container, no workers are running,
+# so locks from previous runs (or from install-app earlier in this script)
+# persist and cause DocumentLockedError on the next sync_fixtures() call.
+# Since we are the ONLY process running during init, clearing all locks is safe.
+# =============================================================================
+clear_document_locks() {
+	local site_name="$1"
+	local locks_dir="${BENCH_DIR}/sites/${site_name}/locks"
+	if [ -d "$locks_dir" ] && ls "$locks_dir"/*.lock 1>/dev/null 2>&1; then
+		echo "Clearing stale document locks from previous run..."
+		rm -f "$locks_dir"/*.lock
+	fi
+}
+
 echo "Using DBMS: $DBMS"
 
 # Wait for all external services (DB, Redis)
