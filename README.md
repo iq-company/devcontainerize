@@ -56,6 +56,9 @@ ops dockerfile create                     # Generate Dockerfiles from templates
 ops build -t dev                          # Build dev image
 ```
 
+> **Tip:** With [direnv](https://direnv.net) installed, the venv activates
+> automatically on `cd`. The install script runs `direnv allow` for you.
+
 **Via bench (when bench is installed):**
 ```bash
 bench ops build                 # Show build plan

@@ -43,3 +43,15 @@ chmod +x "$WRAPPER"
 
 echo "✅ ops CLI installed → $(which ops)"
 echo "   Run 'ops --help' to get started."
+
+# direnv integration: auto-activate venv on cd
+APP_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+if command -v direnv &>/dev/null; then
+    if [ -f "$APP_ROOT/.envrc" ]; then
+        direnv allow "$APP_ROOT" 2>/dev/null || true
+        echo "✅ direnv: .envrc allowed — venv activates automatically on cd"
+    fi
+else
+    echo "💡 Tip: Install direnv to auto-activate the venv when entering this directory."
+    echo "   https://direnv.net"
+fi
