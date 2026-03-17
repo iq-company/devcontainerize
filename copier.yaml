@@ -77,6 +77,20 @@ keep_languages:
   default: "de en-GB en-US"
   help: "Space-separated language codes to keep (EN is always available as source language)"
 
+default_variant:
+  type: str
+  choices:
+    - debian
+    - alpine
+  default: debian
+  help: "Default Dockerfile variant (debian or alpine)"
+
+alpine_version:
+  type: str
+  default: "3.21"
+  when: false
+  help: "Alpine Linux version (only relevant for alpine variant)"
+
 _tasks:
   - "python3 \"{{ _copier_conf.src_path }}/ops/copier/patch_commands_init_py.py\" {{ app_name }} \"{{ _copier_conf.src_path }}\""
   - "python3 \"{{ _copier_conf.src_path }}/ops/copier/patch_hooks_py.py\" {{ app_name }}"
@@ -94,6 +108,7 @@ _skip_if_exists:
   - ".vscode/settings.json"
   - "ops/build/VERSION"
   - "ops/build/stages.yml"
+  - "ops/build/build-settings.yml"
   - "ops/build/resources/dev-cleaner-custom.sh"
   - "ops/build/resources/release-cleaner-custom.sh"
   - "ops/build/resources/frappe-patches.sh"
