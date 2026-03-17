@@ -10,6 +10,7 @@ set -e
 
 APP_NAME="{{ app_name }}"
 BENCH_DIR="/home/${IMAGE_USER:-{{ image_user }}}/bench"
+APPS_DIR="${BENCH_DIR}/apps"
 
 cd "$BENCH_DIR"
 
@@ -33,7 +34,7 @@ for lf in apps/*/yarn.lock; do
 done
 
 # --- Restore node_modules for all apps ---
-INITIALIZED_MARKER="$BENCH_DIR/.devcontainer-initialized"
+INITIALIZED_MARKER="$APPS_DIR/.devcontainer-initialized"
 
 if [ ! -f "$INITIALIZED_MARKER" ]; then
     # First start after image build: node_modules are in a dedup'd/stripped state
