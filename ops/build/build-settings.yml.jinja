@@ -35,6 +35,7 @@ dockerfile_settings:
 # Note: Project-specific values (app_name, image_user, etc.) are automatically
 #       loaded from .copier-answers.yml
 dockerfile_defaults:
+  project_slug: {{ project_slug }}
   # Global version defaults (variant-specific values like alpine_version
   # and debian_base live in base/variants/*.yml)
   python_version: "3.12"

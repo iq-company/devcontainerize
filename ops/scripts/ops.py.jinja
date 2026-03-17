@@ -557,7 +557,7 @@ def _run_dockerfile_gen(variant: str, targets: tuple, dry_run: bool, diff: bool,
 
 
 # NOTE: run-tests and release-dist are frappe-dependent and live in
-# {app_name}/commands/ops_commands.py (bench integration only).
+# {{ app_name }}/commands/ops_commands.py (bench integration only).
 
 
 # =============================================================================
@@ -733,6 +733,8 @@ def get_stage_image_name(config: dict, stage_name: str, image_prefix: str = "") 
     target = stage.get("target", "release")
     suffix = stage.get("image_suffix", "")
 
+    # Image name follows pattern: {prefix}-{target}{suffix}
+    # e.g., {{ image_prefix }}-dev, {{ image_prefix }}-release, {{ image_prefix }}-release-alpine, {{ image_prefix }}-release-prod
     return f"{image_prefix}-{target}{suffix}"
 
 
@@ -1884,7 +1886,7 @@ def trivy_scan(stage_name: str, severity: str, full: bool, output_format: str,
 # Entry point for standalone use and Frappe export
 # =============================================================================
 
-# Export for bench integration ({app_name}.commands.ops_commands imports this)
+# Export for bench integration ({{ app_name }}.commands.ops_commands imports this)
 commands = [ops]
 
 
