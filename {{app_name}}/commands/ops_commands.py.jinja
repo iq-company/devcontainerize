@@ -347,6 +347,9 @@ def run_tests_cmd(context, app_filter, module, doctype, test_filter, section, co
                         continue
                     test_params.append(f"--doctype \"{test_doctype}\"")
                     step_descriptor = f"DocType: {test_doctype}"
+                    if test_filter:
+                        test_params.append(f"--test {test_filter}")
+                        step_descriptor += f", Test: {test_filter}"
 
                 elif "module" in step:
                     if module and module != step["module"]:
@@ -364,8 +367,13 @@ def run_tests_cmd(context, app_filter, module, doctype, test_filter, section, co
                                 continue
                             test_args.append(f"--test {test_name}")
                             step_descriptor += f", Test: {test_name}"
+                        if test_filter and not test_args:
+                            continue
                         if test_args:
                             test_params.extend(test_args)
+                    elif test_filter:
+                        test_params.append(f"--test {test_filter}")
+                        step_descriptor += f", Test: {test_filter}"
 
                 test_params.append("--skip-test-records")
                 full_cmd = f"{run_cmd} {' '.join(test_params)}"
