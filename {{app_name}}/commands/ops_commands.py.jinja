@@ -343,11 +343,15 @@ def run_tests_cmd(context, app_filter, module, doctype, test_filter, section, co
                     test_doctype = step["doctype"]
                     if doctype and doctype != test_doctype:
                         continue
+                    if module:
+                        continue
                     test_params.append(f"--doctype \"{test_doctype}\"")
                     step_descriptor = f"DocType: {test_doctype}"
 
                 elif "module" in step:
                     if module and module != step["module"]:
+                        continue
+                    if module:
                         continue
                     module_path = step["module"]
                     test_params.append(f"--module {module_path}")
