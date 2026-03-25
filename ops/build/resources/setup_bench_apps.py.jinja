@@ -431,6 +431,17 @@ def main():
             print(f"Removing yarn cache: {yarn_cache}")
             shutil.rmtree(yarn_cache)
 
+        # Remove /tmp contents (pip downloads, build artifacts, etc.)
+        tmp_dir = Path("/tmp")
+        for entry in tmp_dir.iterdir():
+            try:
+                if entry.is_dir():
+                    shutil.rmtree(entry)
+                else:
+                    entry.unlink()
+            except OSError:
+                pass
+
         print("Setup complete!")
 
     finally:
