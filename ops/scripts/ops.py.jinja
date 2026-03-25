@@ -562,6 +562,17 @@ def _run_dockerfile_gen(variant: str, targets: tuple, dry_run: bool, diff: bool,
 
 
 # =============================================================================
+# Deps Command (dependency pinning — loaded from ops_deps.py)
+# =============================================================================
+
+try:
+    _deps_mod = _import_sibling_module("ops_deps")
+    ops.add_command(_deps_mod.deps)
+except ImportError:
+    pass
+
+
+# =============================================================================
 # Stage Configuration Helpers
 # =============================================================================
 

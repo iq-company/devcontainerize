@@ -74,6 +74,9 @@ echo "Patching Frappe at: $FRAPPE_TARGET_DIR"
 # Get the directory where this script resides (for resource files like jquery)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# TOML reader: reads [tool.ops.overrides] from pyproject.toml
+READ_TOML="python3 $SCRIPT_DIR/../../scripts/read_toml.py"
+
 # =============================================================================
 # 1. Remove Unused Translations (before bench build compiles them)
 # =============================================================================
@@ -126,42 +129,55 @@ fi
 # =============================================================================
 # 2. Upgrade Python Dependencies with CVEs
 # =============================================================================
+# Versions managed in pyproject.toml [tool.ops.overrides.frappe-pip-upgrades]
+#
+# To add an upgrade, add a key-value pair to pyproject.toml:
+#
+#   [tool.ops.overrides.frappe-pip-upgrades]
+#   markdown2 = "~=2.5.0"         # CVE: XSS/ReDoS in 2.4.x
+#   pypdf = "~=6.7"               # CVE in 3.x
+#   PyJWT = "~=2.12.0"            # CVE in <=2.8.0
+#
+# The key is the package name as it appears in frappe's pyproject.toml,
+# and the value is the new version constraint to replace it with.
 echo "Upgrading Python dependencies with known CVEs..."
 
-# markdown2 2.4.x → 2.5.x (CVE: XSS and ReDoS fixes)
-sed -i 's/markdown2~=2\.4\.[0-9]*/markdown2~=2.5.0/' "$FRAPPE_TARGET_DIR/pyproject.toml"
-
-# pypdf 3.x → 6.7.x (CVE fixes in 3.x)
-sed -i 's/pypdf~=3\.[0-9]*\.[0-9]*/pypdf~=6.7/' "$FRAPPE_TARGET_DIR/pyproject.toml"
-
-# PyJWT 2.8.x → 2.12.x (CVE in <=2.8.0)
-sed -i 's/PyJWT~=2\.8\.[0-9]*/PyJWT~=2.12.0/' "$FRAPPE_TARGET_DIR/pyproject.toml"
+while IFS=$'\t' read -r pkg version; do
+    [ -z "$pkg" ] && continue
+    escaped=$(echo "$pkg" | sed 's/[.]/\\./g')
+    sed -Ei "s/(\"${escaped})[~>=!<][^\"]*/\1${version}/" "$FRAPPE_TARGET_DIR/pyproject.toml"
+    echo "  $pkg → $version"
+done < <($READ_TOML table tool.ops.overrides.frappe-pip-upgrades)
 
 # =============================================================================
 # 3. Remove Unused Python Dependencies
 # =============================================================================
-# Uncomment and customize the libraries you want to remove:
+# Package list managed in pyproject.toml [tool.ops.overrides.frappe-pip-removals]
 #
-# echo "Removing unused Python dependencies..."
+# To remove packages, add them to pyproject.toml:
 #
-# unneeded_libs=(
-#     "PyQRCode"          # QR code generation
-#     "ldap3"             # LDAP authentication
-#     "terminaltables"    # Terminal table formatting
-#     "dropbox"           # Dropbox integration
-#     "google-api-python-client"  # Google APIs
-#     "google-auth-oauthlib"      # Google OAuth
-#     "google-auth"               # Google authentication
-#     "posthog"           # Telemetry/analytics
-#     "maxminddb-geolite2"  # GeoIP lookup
-#     "sentry-sdk"        # Error tracking
-#     "vobject"           # vCard/iCalendar support
-#     "pdfkit"            # wkhtmltopdf wrapper – replaced by WeasyPrint via hooks
-# )
+#   [tool.ops.overrides.frappe-pip-removals]
+#   packages = [
+#       "PyQRCode",                   # QR code generation
+#       "ldap3",                       # LDAP authentication
+#       "terminaltables",              # Terminal table formatting
+#       "dropbox",                     # Dropbox integration
+#       "google-api-python-client",    # Google APIs
+#       "google-auth-oauthlib",        # Google OAuth
+#       "google-auth",                 # Google authentication
+#       "posthog",                     # Telemetry/analytics
+#       "maxminddb-geolite2",          # GeoIP lookup
+#       "sentry-sdk",                  # Error tracking
+#       "vobject",                     # vCard/iCalendar support
+#       "pdfkit",                      # wkhtmltopdf wrapper (use WeasyPrint instead)
+#   ]
 #
-# for lib in "${unneeded_libs[@]}"; do
-#     remove_py_dep "$lib"
-# done
+echo "Removing unused Python dependencies..."
+
+while read -r lib; do
+    [ -z "$lib" ] && continue
+    remove_py_dep "$lib"
+done < <($READ_TOML list tool.ops.overrides.frappe-pip-removals.packages)
 
 # =============================================================================
 # 4. Patch Removed Dependencies (prevent import errors)
@@ -233,55 +249,57 @@ sed -i 's|"github:\([^"]*\)"|"git+https://github.com/\1.git"|g' "$FRAPPE_TARGET_
 
 # Example - Remove a dependency from package.json:
 # sed -i '/@vue\/component-compiler/d' "$FRAPPE_TARGET_DIR/package.json"
-#
+
 # Example - Remove postinstall script:
 # jq 'del(.scripts.postinstall)' "$FRAPPE_TARGET_DIR/package.json" > \
 #     "$FRAPPE_TARGET_DIR/package.tmp.json" && \
 #     mv "$FRAPPE_TARGET_DIR/package.tmp.json" "$FRAPPE_TARGET_DIR/package.json"
-#
-#
+
 # Bump esbuild target from es2017 to es2020 to suppress import.meta warnings
 # from dependencies like zustand that use import.meta.env in their ESM builds.
 # ES2020 is supported by all modern browsers (Chrome 80+, Firefox 74+, Safari 14+).
 sed -i 's/target: \[.*\],/target: ["es2020"],/' "$FRAPPE_TARGET_DIR/esbuild/esbuild.js"
 
-# --- CVE: Upgrade socket.io 4.7.x → 4.8.x ---
-# socket.io 4.7.2 → engine.io 6.5.x → ws ~8.11.0 (CVE: DoS via ws)
-# socket.io 4.8.x → engine.io 6.6.x → ws ~8.17.1+ (fixed)
-# This is a minor/patch bump; the socket.io 4.x API is stable.
-echo "  Upgrading socket.io and socket.io-client to 4.8.x..."
-jq '.dependencies["socket.io"] = "^4.8.3"
-   | .dependencies["socket.io-client"] = "^4.8.1"' \
-    "$FRAPPE_TARGET_DIR/package.json" > tmp.$$.json && \
-    mv tmp.$$.json "$FRAPPE_TARGET_DIR/package.json"
-
-# --- CVE: Upgrade superagent 8.x → 10.x ---
-# superagent 8.x → formidable 2.1.2 (CVE: arbitrary file upload)
-# superagent 10.x → formidable 3.5.x (fixed) + qs ^6.14.1 (fixed)
-# superagent API (.get, .set, .query) is stable across major versions.
-# Used in frappe/realtime for HTTP auth callbacks.
-echo "  Upgrading superagent to 10.x..."
-jq '.dependencies["superagent"] = "^10.0.0"' \
-    "$FRAPPE_TARGET_DIR/package.json" > tmp.$$.json && \
-    mv tmp.$$.json "$FRAPPE_TARGET_DIR/package.json"
+# --- NPM dependency upgrades (from pyproject.toml [tool.ops.overrides.frappe-npm-upgrades]) ---
+#
+# To upgrade npm packages, add them to pyproject.toml:
+#
+#   [tool.ops.overrides.frappe-npm-upgrades]
+#   "socket.io" = "^4.8.3"           # CVE: DoS via ws in 4.7.x
+#   "socket.io-client" = "^4.8.1"
+#   superagent = "^10.0.0"           # CVE: arbitrary file upload in 8.x
+#
+echo "  Upgrading npm dependencies..."
+while IFS=$'\t' read -r pkg version; do
+    [ -z "$pkg" ] && continue
+    jq ".dependencies[\"$pkg\"] = \"$version\"" \
+        "$FRAPPE_TARGET_DIR/package.json" > tmp.$$.json && mv tmp.$$.json "$FRAPPE_TARGET_DIR/package.json"
+    echo "    $pkg → $version"
+done < <($READ_TOML table tool.ops.overrides.frappe-npm-upgrades)
 
 # =============================================================================
 # 7. CVE Fixes (npm resolutions)
 # =============================================================================
+# Resolutions managed in pyproject.toml [tool.ops.overrides.npm-resolutions]
+#
+# Resolutions force a specific version across all transitive dependencies.
+# To add resolutions, add them to pyproject.toml:
+#
+#   [tool.ops.overrides.npm-resolutions]
+#   ws = "8.18.3"                     # force latest 8.x (CVE: DoS)
+#   qs = "6.14.2"                     # prototype pollution fix
+#   "markdown-it" = "14.1.1"          # CVE in 14.1.0
+#   minimatch = "3.1.5"               # ReDoS fix
+#   postcss = "8.4.47"
+#   braces = "3.0.3"
+#   "@adobe/css-tools" = "4.3.3"
+#
 echo "Applying CVE fixes (npm resolutions)..."
 
-# Use add_npm_resolution to pin vulnerable packages to fixed versions:
-# add_npm_resolution "@adobe/css-tools" "4.3.3"
-# add_npm_resolution "postcss" "8.4.47"
-
-# ws: force latest 8.x across all consumers (socket.io, engine.io, etc.)
-add_npm_resolution "ws" "8.18.3"
-# qs: fix prototype pollution CVEs in older 6.x versions
-add_npm_resolution "qs" "6.14.2"
-# markdown-it: patch release fixing CVE in 14.1.0
-add_npm_resolution "markdown-it" "14.1.1"
-# minimatch: upgrade from 3.1.2 to latest 3.x (API-compatible with glob 7.x)
-add_npm_resolution "minimatch" "3.1.5"
+while IFS=$'\t' read -r pkg version; do
+    [ -z "$pkg" ] && continue
+    add_npm_resolution "$pkg" "$version"
+done < <($READ_TOML table tool.ops.overrides.npm-resolutions)
 
 # Remove stale yarn.lock entries for packages we've version-bumped.
 # Each yarn.lock entry starts with "pkg@range:" and ends at the next blank line.

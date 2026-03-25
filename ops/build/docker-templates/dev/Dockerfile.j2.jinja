@@ -31,7 +31,7 @@ ARG GITHUB_USER=x-oauth-basic
 ARG GITHUB_TOKEN
 ARG PRODUCTION_BUILD=false
 
-ARG FRAPPE_REF={{ defaults.frappe_ref | default(defaults.frappe_branch, true) | default('version-15', true) }}
+ARG FRAPPE_REF={{ defaults.frappe_branch | default('version-15', true) }}
 ARG FRAPPE_PATH=https://github.com/frappe/frappe
 
 # Disable uv (Rust-based package manager) — saves ~54 MB and avoids CVEs.

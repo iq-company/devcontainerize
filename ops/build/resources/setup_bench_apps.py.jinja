@@ -21,6 +21,7 @@ Custom apps format:
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -32,7 +33,46 @@ from urllib.parse import urlparse
 # Configuration - can be overridden via environment or arguments
 DEFAULT_APP_NAME = "{{ app_name }}"
 DEFAULT_HOME_DIR = "/home/{{ image_user }}"
-DEFAULT_FRAPPE_REF = "{{ frappe_ref }}"
+DEFAULT_FRAPPE_BRANCH = "{{ frappe_branch }}"
+
+
+def resolve_frappe_ref(app_path: Path, fallback_branch: str) -> str:
+    """Determine the git ref to use for cloning Frappe.
+
+    Reads [tool.ops.frappe] from the app's pyproject.toml.
+    If a version or commit SHA is pinned there, it takes precedence
+    over the default branch from copier.
+
+    Returns a git ref suitable for 'git clone --branch'.
+    """
+    pyproject = app_path / "pyproject.toml"
+    if not pyproject.exists():
+        return fallback_branch
+
+    try:
+        import tomllib
+    except ImportError:
+        try:
+            import tomli as tomllib  # type: ignore[no-redef]
+        except ImportError:
+            return fallback_branch
+
+    try:
+        with open(pyproject, "rb") as f:
+            data = tomllib.load(f)
+    except Exception:
+        return fallback_branch
+
+    frappe_cfg = data.get("tool", {}).get("ops", {}).get("frappe", {})
+    version = frappe_cfg.get("version", "")
+    branch = frappe_cfg.get("branch", "") or fallback_branch
+
+    if not version:
+        return branch
+
+    if re.match(r"^[0-9a-f]{7,40}$", version):
+        return version
+    return f"v{version}"
 
 
 def run_command(cmd: List[str], cwd: str = None, env: dict = None) -> None:
@@ -102,8 +142,9 @@ def parse_app_url(app_url: str) -> tuple:
 
 def main():
     parser = argparse.ArgumentParser(description="Set up bench with custom apps")
-    parser.add_argument("--frappe-ref", default=DEFAULT_FRAPPE_REF,
-                        help="Frappe git reference (branch, tag, or commit)")
+    parser.add_argument("--frappe-ref", default=DEFAULT_FRAPPE_BRANCH,
+                        help="Frappe git reference fallback (branch). "
+                             "Overridden by pyproject.toml [tool.ops.frappe] if a version is pinned.")
     parser.add_argument("--frappe-path", default="https://github.com/frappe/frappe",
                         help="Frappe repository URL")
     parser.add_argument("--custom-apps", default="",
@@ -121,6 +162,12 @@ def main():
     parser.add_argument("--production", action="store_true", default=True,
                         help="Build assets for production (minified)")
     args = parser.parse_args()
+
+    # Resolve Frappe ref: pyproject.toml [tool.ops.frappe] version > --frappe-ref fallback
+    resolved = resolve_frappe_ref(Path(args.local_app_path), args.frappe_ref)
+    if resolved != args.frappe_ref:
+        print(f"Frappe ref from pyproject.toml: {resolved} (overrides default: {args.frappe_ref})")
+    args.frappe_ref = resolved
 
     netrc_path = setup_github_credentials(args.github_user, args.github_token)
 

@@ -298,9 +298,7 @@ app/
 | `project_slug` | string | `app_name` | URL/docker-safe name |
 | `image_prefix` | string | `project_slug` | Docker image prefix |
 | `default_dbms` | choice | `postgres` | Database: postgres, mariadb, sqlite |
-| `frappe_branch` | string | `version-15` | Frappe branch name |
-| `frappe_tag` | string | `""` | Frappe tag (optional, overrides branch) |
-| `frappe_commit` | string | `""` | Frappe commit SHA (optional, overrides all) |
+| `frappe_branch` | string | `version-15` | Frappe branch name (version pinning via pyproject.toml) |
 | `image_user` | string | `frappe` | Docker container user |
 | `image_group` | string | `frappe` | Docker container group |
 | `site_name` | string | `app_name.local` | Development site domain |

@@ -1,19 +1,79 @@
 #!/usr/bin/env python3
-"""Copier Task: Add baker-cli to pyproject.toml dev dependencies.
+"""Copier Task: Patch pyproject.toml for devcontainerize features.
 
-This script modifies an existing pyproject.toml to add baker-cli
-as a development dependency without overwriting the entire file.
+This script modifies an existing pyproject.toml to:
+  1. Add baker-cli as a dev dependency (when feature_image_creation is enabled)
+  2. Add [tool.ops.frappe] and [tool.ops.overrides] sections for centralized
+     dependency and build configuration (used by ops deps CLI and build scripts)
 
-Only runs when feature_image_creation is enabled (which requires baker-cli
-for building Docker images).
-
-Usage: python3 patch_pyproject_toml.py <project_root> <feature_image_creation>
+Usage: python3 patch_pyproject_toml.py <project_root> <feature_image_creation> [frappe_branch]
 """
 
 import subprocess
 import sys
 import re
 from pathlib import Path
+
+
+OPS_SECTIONS_TEMPLATE = """\
+
+# =============================================================================
+# ops CLI — dependency & build configuration
+# =============================================================================
+# Managed by:  ops deps fix | free | update-stable | update-experimental
+# Read by:     build scripts via  python3 read_toml.py
+
+[tool.ops.frappe]
+branch = "{frappe_branch}"
+version = ""                   # tag (e.g. "15.102.1") or commit SHA — empty = branch HEAD
+
+# -----------------------------------------------------------------------------
+# Build-script overrides (consumed by frappe-patches.sh, cleaners, etc.)
+# Centralizes all dependency decisions so they are reviewable in one file.
+# -----------------------------------------------------------------------------
+
+[tool.ops.overrides.frappe-pip-upgrades]
+# Version upgrades applied to frappe's pyproject.toml (CVE fixes)
+# Example:
+markdown2 = "~=2.5.0"         # CVE: XSS/ReDoS in 2.4.x
+pypdf = "~=6.7"               # CVE in 3.x
+PyJWT = "~=2.12.0"            # CVE in <=2.8.0
+
+[tool.ops.overrides.frappe-pip-removals]
+# Packages removed from frappe's pyproject.toml (unused modules)
+# packages = [
+#     "PyMySQL", "PyQRCode", "ldap3", "terminaltables",
+#     "sentry-sdk", "vobject", "pdfkit",
+# ]
+packages = []
+
+[tool.ops.overrides.frappe-npm-upgrades]
+# Version upgrades in frappe's package.json
+"socket.io" = "^4.8.3"           # CVE: DoS via ws in 4.7.x
+"socket.io-client" = "^4.8.1"
+superagent = "^10.0.0"           # CVE: arbitrary file upload in 8.x
+
+[tool.ops.overrides.npm-resolutions]
+# CVE fixes applied as yarn/npm resolutions to all apps' package.json
+"@adobe/css-tools" = "4.3.3"
+"loader-utils" = "^3.2.0"
+postcss = "8.4.47"
+braces = "3.0.3"
+ws = "8.18.3"
+qs = "6.14.2"
+"markdown-it" = "14.1.1"
+minimatch = "3.1.5"
+
+[tool.ops.overrides.release-venv-removals]
+# Packages uninstalled from the release image venv (dev-only tools)
+# packages = ["jedi", "parso", "IPython"]
+packages = []
+
+[tool.ops.overrides.dev-venv-removals]
+# Packages uninstalled from the dev image venv
+# packages = ["jedi", "parso"]
+packages = []
+"""
 
 
 def run_pip_install(project_root: Path) -> bool:
@@ -124,24 +184,47 @@ dev = [
     return False
 
 
+def patch_ops_sections(project_root: Path, frappe_branch: str) -> bool:
+    """Add [tool.ops.frappe] and [tool.ops.overrides] sections if not present."""
+    pyproject_path = project_root / "pyproject.toml"
+
+    if not pyproject_path.exists():
+        return False
+
+    content = pyproject_path.read_text(encoding="utf-8")
+
+    if "[tool.ops.frappe]" in content:
+        print("[ok] [tool.ops.frappe] already in pyproject.toml")
+        return True
+
+    sections = OPS_SECTIONS_TEMPLATE.format(frappe_branch=frappe_branch)
+    content = content.rstrip() + "\n" + sections
+    pyproject_path.write_text(content, encoding="utf-8")
+    print(f"[patch] Added [tool.ops.frappe] and [tool.ops.overrides] sections (branch: {frappe_branch})")
+    return True
+
+
 def main():
     if len(sys.argv) < 3:
-        print("Usage: patch_pyproject_toml.py <project_root> <feature_image_creation>")
+        print("Usage: patch_pyproject_toml.py <project_root> <feature_image_creation> [frappe_branch]")
         sys.exit(1)
 
     project_root = Path(sys.argv[1]).resolve()
     feature_image_creation = sys.argv[2].lower() in ("true", "1", "yes")
+    frappe_branch = sys.argv[3] if len(sys.argv) > 3 else "version-15"
 
-    # Only patch if image_creation feature is enabled
     if not feature_image_creation:
-        print("[skip] feature_image_creation is disabled, baker-cli not needed")
+        print("[skip] feature_image_creation is disabled, skipping pyproject patches")
         return
 
     print("\n" + "=" * 60)
-    print("Setting up baker-cli for Docker image builds")
+    print("Setting up pyproject.toml for Docker image builds")
     print("=" * 60 + "\n")
 
-    # Step 1: Patch pyproject.toml
+    # Step 1: Add [tool.ops.frappe] + [tool.ops.overrides] sections
+    patch_ops_sections(project_root, frappe_branch)
+
+    # Step 2: Add baker-cli to dev dependencies
     patched = patch_pyproject(project_root)
 
     if not patched:
@@ -151,7 +234,7 @@ def main():
         print('  dev = ["baker-cli"]')
         return
 
-    # Step 2: Install dev dependencies
+    # Step 3: Install dev dependencies
     run_pip_install(project_root)
 
 

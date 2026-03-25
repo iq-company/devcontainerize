@@ -34,23 +34,7 @@ default_dbms:
 frappe_branch:
   type: str
   default: "version-15"
-  help: "Frappe branch name (e.g. 'version-15', 'develop')"
-
-frappe_tag:
-  type: str
-  default: ""
-  help: "Frappe tag (optional, overrides branch if set, e.g. 'v15.47.0')"
-
-frappe_commit:
-  type: str
-  default: ""
-  help: "Frappe commit SHA (optional, overrides branch/tag if set)"
-
-# Computed: the actual git ref to use (commit > tag > branch)
-frappe_ref:
-  type: str
-  default: "{% if frappe_commit %}{{ frappe_commit }}{% elif frappe_tag %}{{ frappe_tag }}{% else %}{{ frappe_branch }}{% endif %}"
-  when: false  # Hidden, computed value
+  help: "Frappe branch name (e.g. 'version-15', 'develop') — version pinning is managed via pyproject.toml [tool.ops.frappe]"
 
 author_name:
   type: str
@@ -95,7 +79,7 @@ _tasks:
   - "python3 \"{{ _copier_conf.src_path }}/ops/copier/patch_commands_init_py.py\" {{ app_name }} \"{{ _copier_conf.src_path }}\""
   - "python3 \"{{ _copier_conf.src_path }}/ops/copier/patch_hooks_py.py\" {{ app_name }}"
   - "python3 \"{{ _copier_conf.src_path }}/ops/copier/update_feature_skips.py\" \"{{ _copier_conf.dst_path }}\" \"{{ _copier_conf.src_path }}/copier_features.yml\""
-  - "python3 \"{{ _copier_conf.src_path }}/ops/copier/patch_pyproject_toml.py\" \"{{ _copier_conf.dst_path }}\" {{ feature_image_creation }}"
+  - "python3 \"{{ _copier_conf.src_path }}/ops/copier/patch_pyproject_toml.py\" \"{{ _copier_conf.dst_path }}\" {{ feature_image_creation }} {{ frappe_branch }}"
   - "python3 \"{{ _copier_conf.src_path }}/ops/copier/move_copier_answers.py\" \"{{ _copier_conf.dst_path }}\""
   - "python3 \"{{ _copier_conf.src_path }}/ops/copier/init_dev_stage.py\" \"{{ _copier_conf.dst_path }}\" {{ image_prefix }} {{ default_dbms }}"
   - "python3 \"{{ _copier_conf.src_path }}/ops/copier/gen_dockerfiles.py\" \"{{ _copier_conf.dst_path }}\" {{ default_variant }}"

@@ -8,6 +8,9 @@
 #   - Remove unneeded frappe/app node_modules
 #   - Remove test frameworks, docs, or other dev-only artifacts
 #
+# Package lists for venv removals can be centralized in pyproject.toml
+# under [tool.ops.overrides.dev-venv-removals] and read via read_toml.py.
+#
 # This file is listed in copier's _skip_if_exists — template updates
 # won't overwrite your customizations.
 # =============================================================================
@@ -17,20 +20,30 @@ set -e
 MODE="${1:-all}"
 IMAGE_USER="${IMAGE_USER:-{{ image_user }}}"
 BENCH_PATH="/home/${IMAGE_USER}/bench"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+READ_TOML="python3 $SCRIPT_DIR/../../scripts/read_toml.py"
 
-# Example: Remove unused venv packages and dev-only directories
-# cleanup_app_custom() {
-#     "${BENCH_PATH}/env/bin/pip" uninstall -y jedi parso 2>/dev/null || true
-#     rm -rf "${BENCH_PATH}/apps/frappe/cypress"
-# }
+cleanup_app_custom() {
+    # --- Venv packages (from pyproject.toml [tool.ops.overrides.dev-venv-removals]) ---
+    #
+    # To remove packages from the dev venv, add them to pyproject.toml:
+    #
+    #   [tool.ops.overrides.dev-venv-removals]
+    #   packages = ["jedi", "parso"]
+    #
+    echo "  [dev-cleaner-custom] Removing unused venv packages..."
+    DEV_REMOVALS=$($READ_TOML list tool.ops.overrides.dev-venv-removals.packages | tr '\n' ' ')
+    if [ -n "$DEV_REMOVALS" ]; then
+        "${BENCH_PATH}/env/bin/pip" uninstall -y $DEV_REMOVALS 2>/dev/null || true
+    fi
 
-# Example: Remove additional system packages
-# cleanup_system_custom() {
-#     rm -f /usr/local/bin/some-tool
-# }
+    # --- Add project-specific cleanups below ---
+    # Example: Remove frappe test directories
+    # rm -rf "${BENCH_PATH}/apps/frappe/cypress"
+}
 
 case "${MODE}" in
-    app)    ;; # cleanup_app_custom ;;
-    system) ;; # cleanup_system_custom ;;
-    all)    ;; # cleanup_app_custom; cleanup_system_custom ;;
+    app)    cleanup_app_custom ;;
+    system) ;;
+    all)    cleanup_app_custom ;;
 esac
