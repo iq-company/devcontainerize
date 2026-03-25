@@ -2,6 +2,12 @@
   // Use IntelliSense to learn about possible attributes.
   // Hover to view descriptions of existing attributes.
   // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+  //
+  // Because ms-python.debugpy does not support alpine in all stores (e.g. not in cursors), some manual
+  // installation may be required, if Problemgs "debugpy" related appears:
+  //   curl -L "https://ms-python.gallery.vsassets.io/_apis/public/gallery/publisher/ms-python/extension/debugpy/latest/assetbyname/Microsoft.VisualStudio.Services.VSIXPackage" -o /tmp/debugpy.vsix
+  //   cursor --install-extension /tmp/debugpy.vsix
+  //
   "version": "0.2.0",
   "configurations": [
     {
@@ -32,8 +38,7 @@
         "serve",
         "--port",
         "8000",
-        "--noreload",
-        "--nothreading"
+        "--noreload"
       ],
       "cwd": "${workspaceFolder}/sites",
       "justMyCode": false,

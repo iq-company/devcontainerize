@@ -354,7 +354,7 @@ def run_tests_cmd(context, app_filter, module, doctype, test_filter, section, co
                 elif "module" in step:
                     if module and module != step["module"]:
                         continue
-                    if module:
+                    if doctype:
                         continue
                     module_path = step["module"]
                     test_params.append(f"--module {module_path}")

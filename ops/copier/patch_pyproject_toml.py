@@ -114,7 +114,7 @@ def run_pip_install(project_root: Path) -> bool:
 
 
 def patch_pyproject(project_root: Path) -> bool:
-    """Add baker-cli to pyproject.toml. Returns True if patched or already present."""
+    """Add baker-cli to pyproject.toml. Returns True only if actually patched."""
     pyproject_path = project_root / "pyproject.toml"
 
     if not pyproject_path.exists():
@@ -126,7 +126,7 @@ def patch_pyproject(project_root: Path) -> bool:
     # Check if baker-cli is already present
     if "baker-cli" in content:
         print("[ok] baker-cli already in pyproject.toml")
-        return True
+        return False
 
     # Strategy 1: Look for existing dev dependencies in [project.optional-dependencies]
     dev_deps_pattern = r'(\[project\.optional-dependencies\].*?dev\s*=\s*\[)([^\]]*?)(\])'
@@ -227,15 +227,15 @@ def main():
     # Step 2: Add baker-cli to dev dependencies
     patched = patch_pyproject(project_root)
 
-    if not patched:
+    if patched:
+        print("✓ baker-cli added to pyproject.toml")
+        run_pip_install(project_root)
+    else:
         print("\n⚠ Could not add baker-cli to pyproject.toml")
         print("Please add manually to your dev dependencies:")
         print('  [project.optional-dependencies]')
         print('  dev = ["baker-cli"]')
         return
-
-    # Step 3: Install dev dependencies
-    run_pip_install(project_root)
 
 
 if __name__ == "__main__":
