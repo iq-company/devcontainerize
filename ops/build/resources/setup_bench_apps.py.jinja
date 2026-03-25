@@ -425,6 +425,12 @@ def main():
                 if path.is_dir():
                     shutil.rmtree(path)
 
+        # Remove global yarn cache (not needed at runtime, saves ~100MB+ in image)
+        yarn_cache = Path.home() / ".cache" / "yarn"
+        if yarn_cache.is_dir():
+            print(f"Removing yarn cache: {yarn_cache}")
+            shutil.rmtree(yarn_cache)
+
         print("Setup complete!")
 
     finally:
