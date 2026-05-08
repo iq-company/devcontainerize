@@ -69,6 +69,9 @@ minimatch = "3.1.5"
 # packages = ["jedi", "parso", "IPython"]
 packages = []
 
+[tool.ops.overrides.dev-docker-upgrades]
+# "click" = ">=8.3.3"
+
 [tool.ops.overrides.dev-venv-removals]
 # Packages uninstalled from the dev image venv
 # packages = ["jedi", "parso"]

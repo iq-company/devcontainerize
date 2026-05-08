@@ -21,7 +21,36 @@ MODE="${1:-all}"
 IMAGE_USER="${IMAGE_USER:-{{ image_user }}}"
 BENCH_PATH="/home/${IMAGE_USER}/bench"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-READ_TOML="python3 $SCRIPT_DIR/../../scripts/read_toml.py"
+APP_PATH="${BENCH_PATH}/apps/iq_core"
+READ_TOML="python3 ${APP_PATH}/ops/scripts/read_toml.py"
+
+if [ ! -f "${APP_PATH}/ops/scripts/read_toml.py" ]; then
+    echo "  [dev-cleaner-custom] WARN: ${APP_PATH}/ops/scripts/read_toml.py not found — skipping" >&2
+    exit 0
+fi
+
+cleanup_system_custom() {
+    # Package list from pyproject.toml [tool.ops.overrides.dev-docker-removals]
+    echo "  [dev-cleaner-custom] Removing unused docker packages..."
+    DEV_REMOVALS=$($READ_TOML list tool.ops.overrides.dev-docker-removals.packages | tr '\n' ' ')
+    if [ -n "$DEV_REMOVALS" ]; then
+        "${BENCH_PATH}/env/bin/pip" uninstall -y $DEV_REMOVALS 2>/dev/null || true
+    fi
+
+    # 2) Upgrades — pyproject.toml [tool.ops.overrides.dev-docker-upgrades]
+    # Re-pin packages that earlier installs (e.g. 'pip install frappe-bench')
+    # upgraded inside the same RUN layer. Must run AFTER the last such install.
+    DEV_UPGRADES=$($READ_TOML table tool.ops.overrides.dev-docker-upgrades)
+    if [ -n "$DEV_UPGRADES" ]; then
+        echo "  [dev-cleaner-custom] Enforcing dev-docker package upgrades..."
+        while IFS=$'\t' read -r pkg version; do
+            [ -z "$pkg" ] && continue
+            echo "    -> ${pkg}${version}"
+            "${BENCH_PATH}/env/bin/pip" install --no-cache-dir --upgrade \
+                "${pkg}${version}" || true
+        done <<< "$DEV_UPGRADES"
+    fi
+}
 
 cleanup_app_custom() {
     # --- Venv packages (from pyproject.toml [tool.ops.overrides.dev-venv-removals]) ---
@@ -44,6 +73,6 @@ cleanup_app_custom() {
 
 case "${MODE}" in
     app)    cleanup_app_custom ;;
-    system) ;;
+    system) cleanup_system_custom ;;
     all)    cleanup_app_custom ;;
 esac
