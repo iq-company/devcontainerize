@@ -25,7 +25,11 @@ IMAGE_USER="${IMAGE_USER:-{{ image_user }}}"
 BENCH_PATH="/home/${IMAGE_USER}/bench"
 VENV_PIP="${BENCH_PATH}/env/bin/pip"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-READ_TOML="python3 $SCRIPT_DIR/../../scripts/read_toml.py"
+if [ -f "$SCRIPT_DIR/../../scripts/read_toml.py" ]; then
+    READ_TOML="python3 $SCRIPT_DIR/../../scripts/read_toml.py"
+else
+    READ_TOML="python3 ${BENCH_PATH}/apps/iq_core/ops/scripts/read_toml.py"
+fi
 
 cleanup_app_custom() {
     # --- Dev-only venv packages (from pyproject.toml [tool.ops.overrides.release-venv-removals]) ---

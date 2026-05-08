@@ -81,6 +81,8 @@ cleanup_system() {
     PYTHON_VENV_VERSION=$(ls "${BENCH_PATH}/env/lib/" | grep -E '^python[0-9]+\.[0-9]+' | head -1)
     SITE_PACKAGES="${BENCH_PATH}/env/lib/${PYTHON_VENV_VERSION}/site-packages"
 
+    run_custom
+
     # Remove 'import git' from bench modules (git not installed in release image)
     echo "  [release-cleaner] Patching bench modules (removing git imports)..."
     sed -i 's/import git//' "${SITE_PACKAGES}/bench/utils/app.py" 2>/dev/null || true
@@ -138,8 +140,8 @@ run_custom() {
 # -----------------------------------------------------------------------------
 case "${MODE}" in
     app)    cleanup_app;    run_custom ;;
-    system) cleanup_system; run_custom ;;
-    all)    cleanup_app; cleanup_system; run_custom ;;
+    system) cleanup_system ;;
+    all)    cleanup_app; cleanup_system ;;
     *)      echo "Usage: release-cleaner.sh [app|system|all]"; exit 1 ;;
 esac
 
