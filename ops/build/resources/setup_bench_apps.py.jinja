@@ -75,6 +75,102 @@ def resolve_frappe_ref(app_path: Path, fallback_branch: str) -> str:
     return f"v{version}"
 
 
+def _read_toml_section(path: Path, *keys: str) -> Optional[dict]:
+    """Read a nested section from a TOML file, returning None if absent."""
+    if not path.exists():
+        return None
+    try:
+        import tomllib
+    except ImportError:
+        try:
+            import tomli as tomllib  # type: ignore[no-redef]
+        except ImportError:
+            return None
+    try:
+        with open(path, "rb") as f:
+            data = tomllib.load(f)
+    except Exception:
+        return None
+    for key in keys:
+        data = data.get(key, {})
+        if not isinstance(data, dict):
+            return None
+    return data or None
+
+
+def _drop_yarn_lock_blocks(lockfile: Path, packages: List[str]) -> int:
+    """Remove yarn.lock entries for the given package names.
+
+    A yarn 1.x lockfile entry looks like:
+
+        pkg@^1.0.0, pkg@^1.2.0:
+          version "1.2.3"
+          resolved "https://..."
+          integrity sha512-...
+          dependencies:
+            other "^2.0.0"
+
+        next-pkg@...:
+          ...
+
+    Scoped packages are quoted: `"@scope/name@^1.0.0":`.
+
+    Returns the number of blocks that were dropped.
+    """
+    if not packages:
+        return 0
+    # Resolution keys with slashes (e.g. "@vue/component-compiler/clean-css")
+    # are nested overrides, not top-level yarn.lock blocks — skip them.
+    # Keep scoped packages "@scope/name" (one slash + leading @) but drop the
+    # rest.
+    targets = {
+        p for p in packages
+        if p.count("/") == 0 or (p.startswith("@") and p.count("/") == 1)
+    }
+    if not targets:
+        return 0
+
+    def _pkg_name_from_spec(spec: str) -> str:
+        spec = spec.strip().strip('"')
+        if spec.startswith("@"):
+            # "@scope/name@<range>" → split on LAST '@'
+            at_idx = spec.rfind("@")
+            return spec[:at_idx] if at_idx > 0 else spec
+        return spec.split("@", 1)[0]
+
+    lines = lockfile.read_text().splitlines(keepends=True)
+    out: list[str] = []
+    skip = False
+    dropped = 0
+
+    for line in lines:
+        if not skip:
+            stripped_nl = line.rstrip("\n").rstrip("\r")
+            is_header = (
+                stripped_nl.endswith(":")
+                and not (line.startswith(" ") or line.startswith("\t"))
+                and "@" in stripped_nl
+            )
+            if is_header:
+                header = stripped_nl[:-1]  # drop trailing ':'
+                first_spec = header.split(",", 1)[0]
+                pkg_name = _pkg_name_from_spec(first_spec)
+                if pkg_name in targets:
+                    skip = True
+                    dropped += 1
+                    continue
+            out.append(line)
+        else:
+            if line.strip() == "":
+                skip = False
+                out.append(line)
+
+    if dropped:
+        lockfile.write_text("".join(out))
+
+    return dropped
+
+
 def run_command(cmd: List[str], cwd: str = None, env: dict = None) -> None:
     """Run a shell command with proper error handling."""
     merged_env = {**os.environ, **(env or {})}
@@ -318,6 +414,35 @@ def main():
                     data["resolutions"] = {**data.get("resolutions", {}), **resolutions}
                     pkg_json.write_text(json.dumps(data, indent=2) + "\n")
                     print(f"  → {app_dir.name}")
+
+            # Drop stale yarn.lock blocks for every bumped package so that
+            # 'yarn install' picks up the pinned version instead of respecting
+            # a pre-existing resolved-URL in yarn.lock.
+            #
+            # Package set differs per app:
+            #   - npm-resolutions          → applies to every app (resolutions
+            #                                are propagated everywhere)
+            #   - frappe-npm-upgrades      → only frappe (modifies its
+            #                                package.json "dependencies")
+            #   - yarn-lock-extras.packages → only frappe (transitive bumps,
+            #                                e.g. engine.io via socket.io)
+            app_pyproject = bench_dir / "apps" / local_app_name / "pyproject.toml"
+            frappe_only_upgrades = _read_toml_section(app_pyproject, "tool", "ops", "overrides", "frappe-npm-upgrades") or {}
+            extras_section = _read_toml_section(app_pyproject, "tool", "ops", "overrides", "yarn-lock-extras") or {}
+            frappe_only_extras = list(extras_section.get("packages", []))
+
+            resolution_keys = list(resolutions.keys())
+            for app_dir in sorted((bench_dir / "apps").iterdir()):
+                lockfile = app_dir / "yarn.lock"
+                if not lockfile.is_file():
+                    continue
+                pkg_names = list(resolution_keys)
+                if app_dir.name == "frappe":
+                    pkg_names += list(frappe_only_upgrades.keys())
+                    pkg_names += frappe_only_extras
+                removed = _drop_yarn_lock_blocks(lockfile, pkg_names)
+                if removed:
+                    print(f"  → cleaned {removed} stale yarn.lock blocks in {app_dir.name}")
 
         print("Installing Node requirements...")
         run_command(["bench", "setup", "requirements", "--node"], cwd=str(bench_dir))

@@ -301,19 +301,19 @@ while IFS=$'\t' read -r pkg version; do
     add_npm_resolution "$pkg" "$version"
 done < <($READ_TOML table tool.ops.overrides.npm-resolutions)
 
-# Remove stale yarn.lock entries for packages we've version-bumped.
-# Each yarn.lock entry starts with "pkg@range:" and ends at the next blank line.
-echo "Removing stale yarn.lock entries for bumped packages..."
-if [ -f "$FRAPPE_TARGET_DIR/yarn.lock" ]; then
-    for entry in \
-        '^ws@' \
-        '^engine\.io@' \
-        '^socket\.io@[^-]' \
-        '^socket\.io-client@' \
-        '^superagent@' \
-    ; do
-        sed -i "/${entry}/,/^$/d" "$FRAPPE_TARGET_DIR/yarn.lock"
-    done
-fi
+# NOTE: yarn.lock stale-entry cleanup is performed centrally in
+# setup_bench_apps.py *after* this script (and after app install), using a
+# package list derived dynamically from:
+#   - [tool.ops.overrides.npm-resolutions]      (all apps)
+#   - [tool.ops.overrides.frappe-npm-upgrades]  (frappe only)
+#   - [tool.ops.overrides.yarn-lock-extras].packages
+#                                               (transitive deps, frappe only)
+#
+# Example pyproject.toml for transitive cleanups:
+#
+#   [tool.ops.overrides.yarn-lock-extras]
+#   # Package *names* whose yarn.lock block must be dropped even though they are not listed in
+#   # npm-resolutions/frappe-npm-upgrades themselves.
+#   packages = ["engine.io"]   # bumped indirectly via socket.io upgrade
 
 echo "Frappe patches applied."
